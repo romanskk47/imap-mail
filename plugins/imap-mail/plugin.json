@@ -1,0 +1,21 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "imap-mail",
+  "version": "0.3.1",
+  "description": "Read IMAP mail and prepare verified, unsent reply drafts with private signatures and attachments. No sending or deletion.",
+  "author": {"name": "Piotr Romański"},
+  "repository": "https://github.com/romanskk47/imap-mail",
+  "homepage": "https://github.com/romanskk47/imap-mail",
+  "license": "MIT",
+  "keywords": ["email", "imap", "drafts", "reply", "signatures"],
+  "extensions": {
+    "com.openai": {
+      "onboardingSkill": "./skills/setup/SKILL.md",
+      "interface": {
+        "displayName": "IMAP Mail",
+        "shortDescription": "Portable email reading and verified unsent drafts",
+        "longDescription": "Connect a new account in a private local browser wizard, read IMAP mail and save reviewed unsent drafts. Preserves reply headers, signatures and attachments, verifies saved content, and blocks duplicate retries. Credentials stay on the configured host. No SMTP, sending, deletion, OAuth, cloud hosting, or background sorting."
+      }
+    }
+  }
+}

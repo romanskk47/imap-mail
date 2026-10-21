@@ -1,0 +1,4 @@
+interface:
+  display_name: "IMAP Mail Drafts"
+  short_description: "Discover IMAP accounts and save verified drafts"
+  default_prompt: "Use $mail-drafts to prepare an unsent reply with my configured signature and attachments."

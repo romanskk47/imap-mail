@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Połącz pocztę · IMAP Mail</title>
+  <link rel="stylesheet" href="/setup.css">
+  <script src="/setup.js" defer></script>
+</head>
+<body>
+<main class="shell">
+  <header class="intro">
+    <p class="brand"><span class="brand-mark" aria-hidden="true">M</span> IMAP Mail <span class="local">Tylko na tym komputerze</span></p>
+    <h1>Twoja poczta.<br>Bez otwierania aplikacji.</h1>
+    <p class="lead">Połącz konto, dodaj podpis i przygotowuj szkice na serwerze pocztowym. Ten plugin nigdy nie wysyła wiadomości.</p>
+  </header>
+  <section class="card" aria-label="Konfiguracja konta">
+    <ol class="steps" aria-label="Postęp konfiguracji">
+      <li aria-current="step"><span>1</span> Konto</li>
+      <li><span>2</span> Dostęp i podpis</li>
+      <li><span>3</span> Sprawdź i zapisz</li>
+    </ol>
+    <form id="setup-form" novalidate>
+      <section class="step" id="step-1" aria-labelledby="title-1">
+        <h2 id="title-1" tabindex="-1">Zacznijmy od konta</h2>
+        <p class="muted">Użyj danych swojego dostawcy poczty. Nic nie zostanie zapisane bez Twojego potwierdzenia.</p>
+        <p id="agent-context" class="success" hidden>Agent przygotował dane konta. Sprawdź adres i serwer, a następnie wpisz hasło bezpośrednio tutaj. Możesz poprawić ustawienia przed połączeniem.</p>
+        <div class="field"><label for="email">Adres e-mail</label><input id="email" name="email" type="email" autocomplete="email" required maxlength="254" placeholder="ty@twoja-firma.pl"></div>
+        <details id="account-details"><summary>Szczegóły konta — identyfikator i właściciel</summary><div class="details-body">
+        <div class="grid">
+          <div class="field"><label for="account">Identyfikator konta</label><input id="account" name="account" autocomplete="off" required pattern="[a-zA-Z0-9_\-]{1,80}" maxlength="80" aria-describedby="account-help"><small id="account-help">Krótka, unikalna nazwa, np. poczta-firmowa.</small></div>
+          <div class="field"><label for="entity">Podmiot lub właściciel konta</label><input id="entity" name="entity" autocomplete="organization" required maxlength="120" placeholder="Nazwa firmy / konto prywatne"></div>
+        </div>
+        </div></details>
+        <div class="grid host-grid">
+          <div class="field"><label for="host">Serwer IMAP</label><input id="host" name="host" autocomplete="off" required maxlength="253" placeholder="imap.twoj-dostawca.pl" aria-describedby="host-help"><small id="host-help">Wpisz dokładny adres z ustawień dostawcy.</small></div>
+          <div class="field"><label for="port">Port TLS</label><input id="port" name="port" type="number" inputmode="numeric" required value="993" min="993" max="993" readonly aria-describedby="port-help"><small id="port-help">Szyfrowanie od początku połączenia.</small></div>
+        </div>
+        <p id="suggestion" class="note" role="status"></p>
+      </section>
+      <section class="step" id="step-2" aria-labelledby="title-2" hidden>
+        <h2 id="title-2" tabindex="-1">Dostęp i Twój podpis</h2>
+        <p class="muted">Hasło wpisujesz bezpośrednio tutaj. Nie trafia do rozmowy z AI ani do zewnętrznego formularza.</p>
+        <div id="agent-host-warning" class="warning" hidden><strong>Najpierw niezależnie sprawdź serwer</strong><p>Adres <strong id="agent-host-value"></strong> jest propozycją agenta, nie potwierdzonym adresem znanego dostawcy. Sprawdź go w ustawieniach swojej poczty lub u dostawcy, a następnie przepisz poniżej.</p><div class="field"><label for="agent-host-confirmation">Przepisz dokładny adres serwera</label><input id="agent-host-confirmation" type="text" autocomplete="off" maxlength="253" disabled></div></div>
+        <p id="known-provider" class="note" hidden>Serwer odpowiada znanemu dostawcy tego adresu e-mail. Nadal potwierdź go przed sprawdzeniem dostępu.</p>
+        <div class="field"><label for="password">Hasło do poczty lub hasło aplikacji</label><input id="password" name="password" type="password" autocomplete="new-password" required maxlength="4096" aria-describedby="password-help"><small id="password-help">Jeżeli dostawca wymaga hasła aplikacji, użyj go zamiast zwykłego hasła. Ten formularz nie obsługuje OAuth.</small></div>
+        <label class="check"><input id="host-confirmed" type="checkbox" required><span>Potwierdzam serwer <strong id="confirmed-host"></strong>. Zgadzam się przesłać mu hasło przez szyfrowane połączenie TLS w celu sprawdzenia dostępu.</span></label>
+        <div class="field signature-field"><label for="signature">Podpis w nowych szkicach</label><textarea id="signature" name="signature" rows="4" maxlength="12000" placeholder="Pozdrawiam,&#10;Imię i nazwisko&#10;Nazwa firmy"></textarea><small>Tekst zostanie dodany raz, nad cytowaną wiadomością. Nie zgadujemy treści podpisu.</small></div>
+        <label class="check compact"><input id="signature-none" type="checkbox"><span>Świadomie chcę używać tego konta bez podpisu.</span></label>
+        <div class="signature-preview"><p class="eyebrow">Podgląd podpisu</p><pre id="signature-preview">Wpisz podpis powyżej.</pre></div>
+        <details><summary>Opcjonalnie: załączniki i folder szkiców</summary><div class="details-body">
+          <div class="field"><label for="attachment-root">Dozwolony folder z załącznikami</label><input id="attachment-root" autocomplete="off" maxlength="4096" placeholder="Pełna ścieżka do jednego konkretnego folderu"><small>Opcjonalnie. Podaj lokalną ścieżkę; przeglądarka nie przegląda dysku. Bez niej załączniki pozostają wyłączone. Nie wybieraj całego dysku ani folderu domowego.</small></div>
+          <div class="field"><label for="drafts-mailbox">Nazwa folderu szkiców</label><input id="drafts-mailbox" autocomplete="off" maxlength="1024" placeholder="Pozostaw puste — automatyczne wykrywanie"><small>Uzupełnij tylko wtedy, gdy serwer nie oznacza swojego folderu szkiców.</small></div>
+        </div></details>
+      </section>
+      <section class="step" id="step-3" aria-labelledby="title-3" hidden>
+        <h2 id="title-3" tabindex="-1">Najpierw sprawdzimy dostęp</h2>
+        <p class="muted">Sprawdzenie obejmuje logowanie i odczyt folderów. Nie tworzy wiadomości, nie zmienia poczty i jeszcze niczego nie zapisuje.</p>
+        <dl id="review" class="review"></dl>
+        <div id="checked-banner" class="success" hidden><strong>Połączenie sprawdzone.</strong><p>Możesz teraz zapisać to konto na tym komputerze. Nie utworzono żadnego szkicu.</p></div>
+        <label class="check storage"><input id="storage-consent" type="checkbox"><span>Zgadzam się zapisać hasło lokalnie w pliku z uprawnieniami <strong>0600</strong> (tylko mój użytkownik) oraz włączyć tworzenie niewysłanych szkiców dla tego konta. To nie jest systemowy pęk kluczy; hasło w tym pliku nie jest szyfrowane.</span></label>
+      </section>
+      <div id="error" class="error" role="alert" hidden></div>
+      <p id="status" role="status" class="status"></p>
+      <footer class="actions"><button id="back" type="button" class="secondary" hidden>Wstecz</button><button id="cancel" type="button" class="quiet">Anuluj</button><button id="next" type="submit" class="primary">Dalej <span aria-hidden="true">→</span></button></footer>
+    </form>
+    <section id="finished" class="finished" hidden aria-labelledby="finished-title"><div class="done-mark" aria-hidden="true">✓</div><h2 id="finished-title" tabindex="-1">Konto jest gotowe</h2><p>Ustawienia zapisano lokalnie. Możesz zamknąć tę kartę i wrócić do rozmowy.</p><p class="muted">Nie wysłano wiadomości ani nie utworzono szkicu.</p></section>
+  </section>
+  <p class="footnote">Sesja wygasa po 15 minutach. Bez zewnętrznych skryptów, analityki i wysyłania poczty.</p>
+</main>
+</body>
+</html>

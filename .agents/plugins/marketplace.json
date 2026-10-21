@@ -1,0 +1,12 @@
+{
+  "name": "imap-mail-plugins",
+  "interface": {"displayName": "IMAP Mail"},
+  "plugins": [
+    {
+      "name": "imap-mail",
+      "source": {"source": "local", "path": "./plugins/imap-mail"},
+      "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+      "category": "Productivity"
+    }
+  ]
+}
