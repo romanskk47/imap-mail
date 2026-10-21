@@ -6,6 +6,8 @@ The action follows your request: "prepare/edit a draft" stays unsent, "what shou
 
 An edited draft receives a new IMAP UID and Message-ID. Only a verified edit means the replacement is stored and the old draft is gone; interrupted cleanup can leave both temporarily. See [existing-draft editing and recovery](plugins/imap-mail/README.md#editing-an-existing-unsent-draft).
 
+For a requested attachment repair, the agent can add specified approved local files and turn document files hidden inside HTML-related MIME into ordinary attachments. It previews the before/after file layout and hashes, keeps the existing text, signature, inline images and thread, then uses the same verified draft-replacement workflow. See [draft attachments](plugins/imap-mail/README.md#adding-or-repairing-draft-attachments).
+
 Missing basic mail operations are current implementation gaps, not IMAP restrictions or a task whitelist imposed by the skill. Tool capability and the person's permission to use it are separate. Full reads verify MIME and attachment hashes up to 16 MiB; the returned text view is bounded separately.
 
 SMTP acceptance does not prove delivery. A lost submission response is reported as uncertain and is never blindly retried; a copy in Sent is tracked separately. See the [sending workflow](plugins/imap-mail/README.md#sending-only-when-requested).
@@ -28,6 +30,7 @@ Every person connects their own mailbox. Installing this repository does not gra
 - Setup supports new accounts, plain-text signatures or an explicit no-signature choice. Existing HTML/CID signatures can be configured privately; desktop signatures are not imported automatically.
 - New local attachments require an explicitly approved directory. Existing server drafts can be frozen for a send-specific preview without rebuilding their signature or attachments; sending does not remove the old draft.
 - Editing an existing draft requires IMAP `UIDPLUS`. Exact text replacements are supported in plain text and ordinary HTML text nodes; ambiguous matches, unsupported MIME and drafts changed since preview are rejected rather than silently rebuilt.
+- Attachment additions/repair use a separate preview for that requested change. Added paths still need an approved local directory; normalization preserves existing document bytes and inline signature images rather than rebuilding the message body.
 - This is **not a ChatGPT/Claude web or mobile connector**, Windows package, cloud service or background mail sorter. A remote host needs its own authorized configuration.
 
 ## Installation reference for agents

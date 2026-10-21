@@ -1,4 +1,4 @@
-# IMAP Mail 0.5.1
+# IMAP Mail 0.6.0
 
 A portable plugin for reading IMAP mail, creating or editing **unsent drafts**, or submitting **explicitly requested messages over SMTP**. Editing retires only the exact reviewed original after verifying its replacement; there are no generic delete/move tools, read/answered flag changes to other messages or mail-sorting service. There is no OpenAI API dependency, background job or paid inference call.
 
@@ -113,6 +113,7 @@ The server's special-use `\Drafts` folder is preferred. Configure `drafts_mailbo
 | `mail_draft_apply` | Save exactly that reviewed preview and independently verify it |
 | `mail_draft_status` | Read back the same operation, including uncertain-write recovery |
 | `mail_draft_edit_preview` | Freeze one existing draft and exact replacements; review full before/after content without mailbox writes |
+| `mail_draft_attachment_preview` | Preview specified local file additions and ordinary-attachment repair for existing draft documents; no mailbox writes |
 | `mail_draft_edit_apply` | Verify a replacement before retiring only the pinned original; never sends |
 | `mail_draft_edit_status` | Inspect the same edit without mailbox writes; does not perform pending cleanup |
 | `mail_send_setup` | Open private SMTP permission setup for one existing account; no test send |
@@ -157,7 +158,13 @@ IMAP cannot change a stored message body in place. This workflow appends the rev
 
 Only `status: verified` means the replacement matches and the original is absent. `cleanup_pending` means the operation is not finished; `uncertain` does not prove rejection, and `conflict` requires inspecting the current drafts. A temporary second copy can remain after interruption. Check `mail_draft_edit_status` for the **same** preview ID; it only reads remote state and never retires anything. Repeating the same `mail_draft_edit_apply` may complete pending targeted cleanup after fresh safety checks, but never repeats APPEND. Do not create a fresh preview or switch to a desktop client to get around an uncertain edit. A detected concurrent change or source mismatch stops cleanup; no client-side check can eliminate a race after its final observation. The original local backup remains private recovery evidence; there is no automatic restore or retention policy.
 
-Draft creation, editing and SMTP submission have separate preview types. Edit apply cannot create an arbitrary replacement or send an email, and a send preview cannot be applied as an edit. Installing this feature does not authorize a live edit test.
+Draft creation, editing and SMTP submission have separate preview types. Text and attachment edit previews both return `operation: draft_edit` and use the same exact-ID/hash edit apply/status workflow. Edit apply cannot create an arbitrary replacement or send an email, and a send preview cannot be applied as an edit. Installing this feature does not authorize a live edit test.
+
+### Adding or repairing draft attachments
+
+For a requested attachment change, read the current full draft and use `mail_draft_attachment_preview` with its exact `account` and four-field `draft` reference. `attachments` optionally lists up to ten approved local file paths to add. `normalize_attachments` defaults to `true`: existing document files nested inside HTML-related MIME become ordinary top-level `multipart/mixed` attachments, while authored text, signature, inline/CID images, existing file bytes, recipients, subject and thread stay intact. This does not remove arbitrary files or change wording. Missing files require identifying the intended file, not silently substituting another document.
+
+Review the complete before/after message and attachment names, MIME positions and hashes; confirm that every intended ordinary file is represented, not merely that its bytes exist somewhere inside HTML. Apply only that preview's exact ID/hash using `mail_draft_edit_apply`. The original private backup, UIDPLUS requirement, source-change checks and same-operation recovery described above also apply here. No SMTP, native mail client or new-draft workaround is involved. A verified receipt proves the reviewed MIME structure on the server, not every client's display.
 
 ## Sending only when requested
 
@@ -201,6 +208,7 @@ python3 scripts/imap_mail.py draft-preview --request /private/request.json
 python3 scripts/imap_mail.py draft-apply PREVIEW_ID PREVIEW_HASH
 python3 scripts/imap_mail.py draft-status PREVIEW_ID
 python3 scripts/imap_mail.py draft-edit-preview --input /private/edit-request.json
+python3 scripts/imap_mail.py draft-attachment-preview --input /private/attachment-request.json
 python3 scripts/imap_mail.py draft-edit-apply EDIT_PREVIEW_ID EDIT_PREVIEW_HASH
 python3 scripts/imap_mail.py draft-edit-status EDIT_PREVIEW_ID
 python3 scripts/imap_mail.py send-check example-work
@@ -234,6 +242,17 @@ A new message supplies explicit `to` (an array) and `subject` instead of `reply`
 
 All preview commands accept `--input` and its backward-compatible alias `--request`. The JSON file is private email data, not a repository example to populate with real correspondence.
 
+`/private/attachment-request.json` selects the same current draft and only the requested attachment changes. Omit `attachments` to normalize existing files without adding any:
+
+```json
+{
+  "account": "example-work",
+  "draft": {"account": "example-work", "mailbox": "Drafts", "uidvalidity": "42", "uid": "456"},
+  "attachments": ["/private/approved-attachments/report.pdf"],
+  "normalize_attachments": true
+}
+```
+
 ## Verification
 
 Offline tests do not load real credentials or contact mail servers:
@@ -255,6 +274,10 @@ Primary protocol references: [IMAP APPEND](https://www.rfc-editor.org/rfc/rfc905
 This is a local stdio package for supported Codex and Claude Code installations on Mac/Linux. It does not install a connector in ordinary ChatGPT or Claude web/mobile chats, host a multiuser service, or deploy alongside Mailroom. Those need a separately secured remote integration. Windows is not supported by the POSIX journal locking implementation.
 
 The package contains generic code and example identities only, not the author's account configuration or secrets. The source and tagged releases are distributed from [romanskk47/imap-mail](https://github.com/romanskk47/imap-mail) under the [MIT License](LICENSE). GitHub publication is not approval or listing in an official ChatGPT/Claude plugin directory. Provider OAuth registration, web/mobile connectors and any official-directory submission remain separate work.
+
+### Version 0.6.0
+
+Adds reviewed attachment repair for an existing unsent draft. Approved local files can be added and existing document parts promoted to ordinary top-level attachments without rewriting authored text, recipients or signatures. Empty supported Apple attachment placeholders can be removed conservatively. A complete before/after preview, private original backup and the existing one-APPEND/targeted-retirement journal remain mandatory. No sending or general mailbox deletion is introduced.
 
 ### Version 0.5.1
 

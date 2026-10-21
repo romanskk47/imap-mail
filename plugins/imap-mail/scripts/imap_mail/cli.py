@@ -46,6 +46,9 @@ def parser() -> argparse.ArgumentParser:
     edit_preview = commands.add_parser("draft-edit-preview", help="Freeze exact replacements to one existing unsent draft; no mailbox writes")
     edit_preview.add_argument("--input", "--request", dest="request", required=True,
                               help="JSON file with account, exact draft reference and text replacements")
+    attachment_preview = commands.add_parser("draft-attachment-preview", help="Preview requested attachment additions or MIME repair to one existing unsent draft")
+    attachment_preview.add_argument("--input", "--request", dest="request", required=True,
+                                    help="JSON file with account, exact draft reference, optional attachment paths and normalization choice")
     edit_apply = commands.add_parser("draft-edit-apply", help="Replace the reviewed draft; retire only its pinned original after verification, never send")
     edit_apply.add_argument("preview_id")
     edit_apply.add_argument("preview_hash")
@@ -69,7 +72,7 @@ def request(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
     command = values.pop("command")
     values.pop("config")
     values.pop("state_dir")
-    if command in ("draft-preview", "draft-edit-preview", "send-preview"):
+    if command in ("draft-preview", "draft-edit-preview", "draft-attachment-preview", "send-preview"):
         path = Path(values["request"]).expanduser()
         if not path.is_file() or path.stat().st_size > 2 * 1024 * 1024:
             raise InvalidArguments("Preview request must be a JSON file no larger than 2 MiB")
@@ -78,6 +81,7 @@ def request(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise InvalidArguments("Preview request is not readable UTF-8 JSON") from exc
         return {"draft-preview": "mail_draft_preview", "draft-edit-preview": "mail_draft_edit_preview",
+                "draft-attachment-preview": "mail_draft_attachment_preview",
                 "send-preview": "mail_send_preview"}[command], body
     names = {"accounts": "mail_accounts", "check": "mail_check", "folders": "mail_folders", "search": "mail_search",
              "read": "mail_read", "draft-apply": "mail_draft_apply", "draft-status": "mail_draft_status",

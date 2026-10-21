@@ -133,12 +133,12 @@ class EditInterfaceTests(unittest.TestCase):
             self.assertIsNone(response)
         self.assertEqual([], self.service.calls)
 
-    def test_factory_selects_edit_service_without_eager_profile_access(self):
-        module = types.ModuleType("imap_mail.edit")
-        module.EditService = Mock(return_value=self.service)
-        with patch.dict(sys.modules, {"imap_mail.edit": module}):
+    def test_factory_selects_attachment_capable_edit_service_without_eager_profile_access(self):
+        module = types.ModuleType("imap_mail.attachments")
+        module.AttachmentService = Mock(return_value=self.service)
+        with patch.dict(sys.modules, {"imap_mail.attachments": module}):
             self.assertIs(self.service, mcp.make_service("/private/settings.json", "/private/state"))
-        module.EditService.assert_called_once_with(config_path="/private/settings.json", state_dir="/private/state")
+        module.AttachmentService.assert_called_once_with(config_path="/private/settings.json", state_dir="/private/state")
 
     def test_cli_preview_accepts_input_and_request_without_applying(self):
         with tempfile.TemporaryDirectory() as directory:
