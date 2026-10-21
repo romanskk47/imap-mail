@@ -9,6 +9,7 @@ from contextlib import contextmanager
 import datetime as dt
 import email
 from email import policy
+import html
 import json
 import os
 import re
@@ -25,6 +26,7 @@ from .core import (DraftError, DraftService, MESSAGE_ID, MAX_RAW, MAX_BODY, STAB
 
 SMTP_TIMEOUT = 30
 UPLOAD_TIMEOUT = 60
+READ_BODY_LIMIT = 60_000
 
 
 class _SendComposer(DraftService):
@@ -79,6 +81,82 @@ class SendService(DraftService):
                  smtp_factory=None):
         super().__init__(config_path, state_dir, reader_factory)
         self.smtp_factory = smtp_factory or globals()["smtp_factory"]
+
+    @public
+    def read(self, account, mailbox, uidvalidity, uid):
+        """Read complete MIME with PEEK, then bound only its text presentation.
+
+        Some providers convert stored MIME when serving a message, and corrupt
+        partial BODY ranges or keep a stale RFC822.SIZE. The full-body reader
+        validates the literal and independently proves EOF when size differs.
+        Reading does not require draft/SMTP permissions and creates no journal.
+        """
+        config = self._config()
+        _, profile = self._account(config, account, write=False)
+        with self._reader(profile) as reader:
+            raw, flags = self._full_raw(reader, mailbox, uidvalidity, uid)
+        try:
+            if not raw.strip():
+                raise ValueError("Empty MIME")
+            message = email.message_from_bytes(raw, policy=policy.default)
+            files = []
+            for part in message.walk():
+                if part.is_multipart():
+                    # Attached messages/multipart files are containers rather
+                    # than leaf payloads. Do not silently omit their filename
+                    # or publish a hash of a reserialized, non-original file.
+                    if (part.get_content_maintype() == "message" or
+                            part.get_content_disposition() == "attachment" or
+                            part.get_filename() is not None):
+                        raise DraftError("UNSUPPORTED_MESSAGE_MIME")
+                    continue
+                # Decoding also exposes invalid base64 defects, so inspect all
+                # parts before claiming a complete attachment manifest.
+                payload = part.get_payload(decode=True)
+                if not isinstance(payload, bytes):
+                    raise ValueError("Undecodable MIME payload")
+                disposition = part.get_content_disposition()
+                filename = part.get_filename()
+                cid = str(part.get("Content-ID", ""))
+                if (disposition == "attachment" or filename is not None or cid or
+                        part.get_content_maintype() != "text"):
+                    files.append({"filename": filename, "type": part.get_content_type(),
+                                  "disposition": disposition, "cid": cid,
+                                  "bytes": len(payload), "sha256": digest(payload)})
+            if any(part.defects for part in message.walk()):
+                raise ValueError("Defective MIME")
+            body, body_type = "", None
+            for subtype in ("plain", "html"):
+                part = message.get_body(preferencelist=(subtype,))
+                if part is None:
+                    continue
+                candidate = part.get_content()
+                if not isinstance(candidate, str):
+                    raise ValueError("Undecodable MIME text")
+                candidate = candidate.replace("\r\n", "\n").replace("\r", "\n")
+                if subtype == "html":
+                    candidate = re.sub(r"(?is)<(script|style)\b[^>]*>.*?</\1>", "", candidate)
+                    candidate = html.unescape(re.sub(r"<[^>]*>", " ", candidate))
+                    candidate = re.sub(r"\s+", " ", candidate).strip()
+                if candidate.strip():
+                    body, body_type = candidate, part.get_content_type()
+                    break
+        except DraftError:
+            raise
+        except Exception:
+            raise DraftError("MALFORMED_MESSAGE_MIME") from None
+        headers = {name: str(message.get(name, ""))[:4000]
+                   for name in (*read_access.HEADERS, "Cc")}
+        return {**read_access.identity(profile), "mailbox": mailbox,
+                "uidvalidity": str(uidvalidity), "uid": str(uid), **headers,
+                "flags": flags, "internal_date": None, "internal_date_available": False,
+                "body": body[:READ_BODY_LIMIT], "body_type": body_type,
+                "body_characters": len(body), "body_truncated": len(body) > READ_BODY_LIMIT,
+                "truncated": len(body) > READ_BODY_LIMIT,
+                "raw_bytes": len(raw), "content_sha256": digest(raw), "mime_complete": True,
+                "attachments": [item["filename"] for item in files],
+                "attachment_details": files, "attachment_manifest_complete": True,
+                "attachments_read": False, "contentTrust": "untrusted email"}
 
     def _send_account(self, config, account, profiles=None):
         entry, profile = self._account(config, account, profiles=profiles)

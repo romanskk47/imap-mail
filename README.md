@@ -6,6 +6,8 @@ The action follows your request: "prepare/edit a draft" stays unsent, "what shou
 
 An edited draft receives a new IMAP UID and Message-ID. Only a verified edit means the replacement is stored and the old draft is gone; interrupted cleanup can leave both temporarily. See [existing-draft editing and recovery](plugins/imap-mail/README.md#editing-an-existing-unsent-draft).
 
+Missing basic mail operations are current implementation gaps, not IMAP restrictions or a task whitelist imposed by the skill. Tool capability and the person's permission to use it are separate. Full reads verify MIME and attachment hashes up to 16 MiB; the returned text view is bounded separately.
+
 SMTP acceptance does not prove delivery. A lost submission response is reported as uncertain and is never blindly retried; a copy in Sent is tracked separately. See the [sending workflow](plugins/imap-mail/README.md#sending-only-when-requested).
 
 ## Give this to your agent

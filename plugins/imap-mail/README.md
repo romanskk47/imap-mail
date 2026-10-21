@@ -1,4 +1,4 @@
-# IMAP Mail 0.5.0
+# IMAP Mail 0.5.1
 
 A portable plugin for reading IMAP mail, creating or editing **unsent drafts**, or submitting **explicitly requested messages over SMTP**. Editing retires only the exact reviewed original after verifying its replacement; there are no generic delete/move tools, read/answered flag changes to other messages or mail-sorting service. There is no OpenAI API dependency, background job or paid inference call.
 
@@ -255,6 +255,12 @@ Primary protocol references: [IMAP APPEND](https://www.rfc-editor.org/rfc/rfc905
 This is a local stdio package for supported Codex and Claude Code installations on Mac/Linux. It does not install a connector in ordinary ChatGPT or Claude web/mobile chats, host a multiuser service, or deploy alongside Mailroom. Those need a separately secured remote integration. Windows is not supported by the POSIX journal locking implementation.
 
 The package contains generic code and example identities only, not the author's account configuration or secrets. The source and tagged releases are distributed from [romanskk47/imap-mail](https://github.com/romanskk47/imap-mail) under the [MIT License](LICENSE). GitHub publication is not approval or listing in an official ChatGPT/Claude plugin directory. Provider OAuth registration, web/mobile connectors and any official-directory submission remain separate work.
+
+### Version 0.5.1
+
+Fixes ordinary message reads that previously fetched only the first 2 MiB and could prefer an empty plain alternative over real HTML. The plugin now reads verified full MIME up to 16 MiB, reports complete attachment metadata with byte counts and SHA256, and separates MIME completeness from text-view truncation. Reading does not alter flags, drafts or SMTP settings. The skill distinguishes actual missing implementations from permission to perform a requested mail task.
+
+The text view is capped at 60,000 characters independently of the full-MIME check. Attached messages (`.eml`/`message/rfc822`) and multipart attachment files are currently reported as unsupported rather than omitted from a supposedly complete manifest. `attachments_read: false` means document contents were not interpreted. The full-reader response does not guess an unavailable IMAP internal date.
 
 ### Version 0.5.0
 
