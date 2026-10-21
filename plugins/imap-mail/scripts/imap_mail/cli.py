@@ -13,7 +13,7 @@ from .mcp import InvalidArguments, dispatch_tool, error_payload, make_service
 
 
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(description="Read IMAP, save unsent drafts, or submit explicitly authorized SMTP messages")
+    result = argparse.ArgumentParser(description="Read IMAP, save or edit unsent drafts, or submit explicitly authorized SMTP messages")
     result.add_argument("--config", help="Private settings JSON (or MAIL_DRAFTS_CONFIG)")
     result.add_argument("--state-dir", help="Private journal directory (or MAIL_DRAFTS_STATE_DIR)")
     commands = result.add_subparsers(dest="command", required=True)
@@ -37,16 +37,24 @@ def parser() -> argparse.ArgumentParser:
     for field in ("account", "mailbox", "uidvalidity", "uid"):
         read.add_argument(field)
     preview = commands.add_parser("draft-preview")
-    preview.add_argument("--request", required=True, help="JSON file containing exact preview arguments")
+    preview.add_argument("--request", "--input", dest="request", required=True, help="JSON file containing exact preview arguments")
     apply = commands.add_parser("draft-apply")
     apply.add_argument("preview_id")
     apply.add_argument("preview_hash")
     status = commands.add_parser("draft-status")
     status.add_argument("preview_id")
+    edit_preview = commands.add_parser("draft-edit-preview", help="Freeze exact replacements to one existing unsent draft; no mailbox writes")
+    edit_preview.add_argument("--input", "--request", dest="request", required=True,
+                              help="JSON file with account, exact draft reference and text replacements")
+    edit_apply = commands.add_parser("draft-edit-apply", help="Replace the reviewed draft; retire only its pinned original after verification, never send")
+    edit_apply.add_argument("preview_id")
+    edit_apply.add_argument("preview_hash")
+    edit_status = commands.add_parser("draft-edit-status", help="Inspect the same edit without mailbox writes or sending")
+    edit_status.add_argument("preview_id")
     send_check = commands.add_parser("send-check", help="Check separately enabled SMTP without sending a message")
     send_check.add_argument("account")
     send_preview = commands.add_parser("send-preview", help="Freeze content for an explicit send request; does not send")
-    send_preview.add_argument("--request", required=True)
+    send_preview.add_argument("--request", "--input", dest="request", required=True)
     send_apply = commands.add_parser("send-apply", help="Submit the exact reviewed message only with human authorization")
     send_apply.add_argument("preview_id")
     send_apply.add_argument("preview_hash")
@@ -61,7 +69,7 @@ def request(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
     command = values.pop("command")
     values.pop("config")
     values.pop("state_dir")
-    if command in ("draft-preview", "send-preview"):
+    if command in ("draft-preview", "draft-edit-preview", "send-preview"):
         path = Path(values["request"]).expanduser()
         if not path.is_file() or path.stat().st_size > 2 * 1024 * 1024:
             raise InvalidArguments("Preview request must be a JSON file no larger than 2 MiB")
@@ -69,9 +77,11 @@ def request(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
             body = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise InvalidArguments("Preview request is not readable UTF-8 JSON") from exc
-        return "mail_draft_preview" if command == "draft-preview" else "mail_send_preview", body
+        return {"draft-preview": "mail_draft_preview", "draft-edit-preview": "mail_draft_edit_preview",
+                "send-preview": "mail_send_preview"}[command], body
     names = {"accounts": "mail_accounts", "check": "mail_check", "folders": "mail_folders", "search": "mail_search",
              "read": "mail_read", "draft-apply": "mail_draft_apply", "draft-status": "mail_draft_status",
+             "draft-edit-apply": "mail_draft_edit_apply", "draft-edit-status": "mail_draft_edit_status",
              "send-check": "mail_send_check", "send-apply": "mail_send_apply", "send-status": "mail_send_status"}
     return names[command], {key: value for key, value in values.items() if value is not None}
 

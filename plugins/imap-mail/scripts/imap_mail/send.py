@@ -232,6 +232,10 @@ class SendService(DraftService):
         actual, _ = reader.select(mailbox)
         if str(actual) != str(uidvalidity):
             raise DraftError("UIDVALIDITY_CHANGED")
+        return self._fetch_full_raw(reader, uid)
+
+    def _fetch_full_raw(self, reader, uid):
+        """Fetch from the already selected mailbox without changing its mode."""
         status, rows = reader.client.uid("FETCH", str(uid), "(UID RFC822.SIZE FLAGS BODY.PEEK[])")
         literals = [row for row in rows if isinstance(row, tuple)] if status == "OK" else []
         if len(literals) != 1:

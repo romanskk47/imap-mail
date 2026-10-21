@@ -38,10 +38,10 @@ class MCPTests(unittest.TestCase):
                                   "params": {"name": name, "arguments": arguments}}, service=self.service)
 
     def test_exact_tool_allowlist_and_annotations(self):
-        expected = {"mail_setup", "mail_accounts", "mail_check", "mail_folders", "mail_search", "mail_read", "mail_draft_preview", "mail_draft_apply", "mail_draft_status", "mail_send_setup", "mail_send_check", "mail_send_preview", "mail_send_apply", "mail_send_status"}
+        expected = {"mail_setup", "mail_accounts", "mail_check", "mail_folders", "mail_search", "mail_read", "mail_draft_preview", "mail_draft_apply", "mail_draft_status", "mail_draft_edit_preview", "mail_draft_edit_apply", "mail_draft_edit_status", "mail_send_setup", "mail_send_check", "mail_send_preview", "mail_send_apply", "mail_send_status"}
         self.assertEqual(expected, set(mcp.TOOL_SCHEMAS))
         for definition in mcp.TOOLS:
-            self.assertEqual(definition["name"] == "mail_send_apply", definition["annotations"]["destructiveHint"])
+            self.assertEqual(definition["name"] in {"mail_send_apply", "mail_draft_edit_apply"}, definition["annotations"]["destructiveHint"])
             self.assertFalse(definition["inputSchema"]["additionalProperties"])
         self.assertFalse(next(x for x in mcp.TOOLS if x["name"] == "mail_draft_apply")["annotations"]["readOnlyHint"])
         self.assertTrue(next(x for x in mcp.TOOLS if x["name"] == "mail_check")["annotations"]["readOnlyHint"])
@@ -183,7 +183,7 @@ class MCPTests(unittest.TestCase):
         messages = [json.loads(line) for line in proc.stdout.splitlines()]
         self.assertEqual(3, len(messages))
         self.assertEqual(1, messages[0]["id"])
-        self.assertEqual(14, len(messages[1]["result"]["tools"]))
+        self.assertEqual(17, len(messages[1]["result"]["tools"]))
         self.assertEqual(-32700, messages[2]["error"]["code"])
 
 

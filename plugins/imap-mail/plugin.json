@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "imap-mail",
-  "version": "0.4.0",
-  "description": "Read IMAP mail, save unsent drafts or submit explicitly authorized SMTP messages with private signatures and attachments. No deletion.",
+  "version": "0.5.0",
+  "description": "Read IMAP mail, create or edit unsent drafts, or explicitly send reviewed messages over opt-in SMTP. Private signatures and attachments.",
   "author": {"name": "Piotr Romański"},
   "repository": "https://github.com/romanskk47/imap-mail",
   "homepage": "https://github.com/romanskk47/imap-mail",
@@ -13,8 +13,8 @@
       "onboardingSkill": "./skills/setup/SKILL.md",
       "interface": {
         "displayName": "IMAP Mail",
-        "shortDescription": "Read mail, save drafts or explicitly send via SMTP",
-        "longDescription": "Read IMAP mail, save reviewed unsent drafts or submit explicitly requested SMTP messages. Sending requires separate account opt-in and a send-specific immutable preview. Distinguishes SMTP acceptance from Sent-copy verification and delivery; blocks blind uncertain retries. Credentials remain private on the configured host. No deletion, OAuth, cloud hosting, or background sorting."
+        "shortDescription": "Read mail, create/edit drafts or explicitly send",
+        "longDescription": "Read IMAP mail, create or edit reviewed unsent drafts, or submit explicitly requested SMTP messages. Editing verifies a replacement before retiring only the exact original and keeps a private backup. Sending requires separate opt-in and a send-specific preview. Blocks blind uncertain retries. Credentials stay on the configured host. No generic deletion, OAuth, cloud hosting or background sorting."
       }
     }
   }

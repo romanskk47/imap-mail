@@ -1,6 +1,6 @@
-# IMAP Mail 0.4.0
+# IMAP Mail 0.5.0
 
-A portable plugin for reading IMAP mail, saving **unsent drafts**, or submitting **explicitly requested messages over SMTP**. It does not delete or move messages, mark originals read/answered, or run a mail-sorting service. There is no OpenAI API dependency, background job or paid inference call.
+A portable plugin for reading IMAP mail, creating or editing **unsent drafts**, or submitting **explicitly requested messages over SMTP**. Editing retires only the exact reviewed original after verifying its replacement; there are no generic delete/move tools, read/answered flag changes to other messages or mail-sorting service. There is no OpenAI API dependency, background job or paid inference call.
 
 The same standard-library Python implementation is available through MCP and a JSON CLI. It runs on a configured Mac or Linux host without Apple Mail. The host still needs its own authorized account profiles, network access and private signatures; installing the plugin does not move credentials between computers.
 
@@ -97,7 +97,7 @@ The optional top-level `preferred_transport: "imap"` makes this plugin the norma
 
 The bundled reader understands the same JSON profiles as `mail-access`: required `id`, `host`, `user`, `entity`, TLS enabled, and exactly one of `password`, `password_env`, `password_file`. Literal-password files must be private. The default profile directory is `~/.secrets/services/mail`; `MAIL_PROFILES_DIR` or `MAIL_PROFILES_JSON` can supply host-owned profiles. Credentials are never included in the plugin, previews or tool output. This direct adapter does not implement OAuth or bypass an account's read-only broker. Broker-only access needs an authorized server-side draft adapter before writing.
 
-The server's special-use `\Drafts` folder is preferred. Configure `drafts_mailbox` explicitly only when no special-use Drafts folder exists and the exact destination has been verified. Multiple special-use Drafts folders are rejected; resolve that ambiguity in the server configuration before writing. The adapter never creates arbitrary mailboxes. It only appends drafts to the selected destination.
+The server's special-use `\Drafts` folder is preferred. Configure `drafts_mailbox` explicitly only when no special-use Drafts folder exists and the exact destination has been verified. Multiple special-use Drafts folders are rejected; resolve that ambiguity in the server configuration before writing. The adapter never creates arbitrary mailboxes. Draft creation appends only to that selected destination; an edit replaces only a verified existing draft there.
 
 ## Workflow and tools
 
@@ -112,6 +112,9 @@ The server's special-use `\Drafts` folder is preferred. Configure `drafts_mailbo
 | `mail_draft_preview` | Freeze a private MIME preview with signature, attachments and reply headers |
 | `mail_draft_apply` | Save exactly that reviewed preview and independently verify it |
 | `mail_draft_status` | Read back the same operation, including uncertain-write recovery |
+| `mail_draft_edit_preview` | Freeze one existing draft and exact replacements; review full before/after content without mailbox writes |
+| `mail_draft_edit_apply` | Verify a replacement before retiring only the pinned original; never sends |
+| `mail_draft_edit_status` | Inspect the same edit without mailbox writes; does not perform pending cleanup |
 | `mail_send_setup` | Open private SMTP permission setup for one existing account; no test send |
 | `mail_send_check` | Check confirmed SMTP/TLS/login and Sent destination without MAIL/RCPT/DATA |
 | `mail_send_preview` | Freeze a new message/reply or exact existing draft for a requested send |
@@ -132,9 +135,9 @@ If `mail_check` returns `needs_attention`, inspect its sanitized `error_code` an
 
 These results apply to the host where they were obtained. Installing or checking the Mac does not deploy the package, credentials or signatures to a VPS, CI worker or another computer. Each remote host needs its own authorized configuration and checks.
 
-Preview creation does not write a server draft. Review all returned fields, then apply its exact ID and hash only within a user-authorized draft request. A wording-only request stays a preview. Saved drafts use `\Draft`; the source message's flags are not changed.
+Preview creation does not write a server draft. Review all returned fields, then apply its exact ID and hash only within a user-authorized draft request. A wording-only request stays a preview. New drafts use `\Draft`; creation does not change the reply source's flags.
 
-`prepared` means a local preview exists. Only `verified` means an independently read-back server draft matches the frozen content. An `uncertain` write must be checked with `mail_draft_status`: a lost APPEND response might mean the server already accepted it. The journal binds the original Message-ID and blocks blind re-appends. Do not make a new preview to work around uncertainty. Human-edited drafts are not overwritten or deleted.
+`prepared` means a local preview exists. Only `verified` means an independently read-back server draft matches the frozen content. An `uncertain` write must be checked with `mail_draft_status`: a lost APPEND response might mean the server already accepted it. The journal binds the original Message-ID and blocks blind re-appends. Do not make a new preview to work around uncertainty. A changed draft is not overwritten using a stale creation receipt; use the explicit editing workflow below for a requested change to its current version.
 
 APPEND socket waits are bounded at 60 seconds to allow attachment uploads. A slow
 or interrupted upload can still remain uncertain; a timeout is never proof that
@@ -143,6 +146,18 @@ rewrite its Message-ID or content; the old receipt then deliberately stops
 verifying. These cases require checking the existing draft, not replaying it.
 
 Preview state contains email bodies and attachment bytes. Protect it as private mail data, not an ordinary build cache. The plugin has no automatic retention/deletion policy; the owner is responsible for retaining or removing local evidence under their own policy. It does not alter another mail service's fences, leases, schedules or credentials.
+
+## Editing an existing unsent draft
+
+Use this workflow when the person asks to change an existing draft, not to send it. Select the current message in the verified Drafts folder and pass its exact account, mailbox, UIDVALIDITY and UID to `mail_draft_edit_preview`, with the same top-level account and a nonempty `replacements` list. Each item has literal `old_text` and `new_text`; an empty new text deletes just the matched text. Up to 20 replacements are allowed, subject to the request-size limit. Matching is conservative: ordinary plain text and HTML text nodes are supported, while ambiguous matches, unsupported MIME or changes requiring alteration of markup are rejected.
+
+The preview stores an immutable private original MIME backup and proposed replacement, but writes no mailbox message. Review the complete before/after bodies, account, recipients, subject, signature, thread headers and attachment hashes. An edit does not add the configured signature again, rebuild attachments from local paths or accept replacement recipients. Use its exact ID/hash with `mail_draft_edit_apply` only after that review and under the person's edit instruction.
+
+IMAP cannot change a stored message body in place. This workflow appends the reviewed replacement, independently verifies it, then marks and expunges **only the pinned original UID**. It requires `UIDPLUS`; unsupported servers stop before the first mailbox write. No global EXPUNGE is used. These steps are not atomic across other mail clients: avoid editing or sending the same draft in another client while the operation runs. The edited draft therefore has a new UID and Message-ID. After a verified edit, use the returned current reference for future edits or an explicitly requested send, not the retired reference.
+
+Only `status: verified` means the replacement matches and the original is absent. `cleanup_pending` means the operation is not finished; `uncertain` does not prove rejection, and `conflict` requires inspecting the current drafts. A temporary second copy can remain after interruption. Check `mail_draft_edit_status` for the **same** preview ID; it only reads remote state and never retires anything. Repeating the same `mail_draft_edit_apply` may complete pending targeted cleanup after fresh safety checks, but never repeats APPEND. Do not create a fresh preview or switch to a desktop client to get around an uncertain edit. A detected concurrent change or source mismatch stops cleanup; no client-side check can eliminate a race after its final observation. The original local backup remains private recovery evidence; there is no automatic restore or retention policy.
+
+Draft creation, editing and SMTP submission have separate preview types. Edit apply cannot create an arbitrary replacement or send an email, and a send preview cannot be applied as an edit. Installing this feature does not authorize a live edit test.
 
 ## Sending only when requested
 
@@ -185,6 +200,9 @@ python3 scripts/imap_mail.py read example-work INBOX 42 123
 python3 scripts/imap_mail.py draft-preview --request /private/request.json
 python3 scripts/imap_mail.py draft-apply PREVIEW_ID PREVIEW_HASH
 python3 scripts/imap_mail.py draft-status PREVIEW_ID
+python3 scripts/imap_mail.py draft-edit-preview --input /private/edit-request.json
+python3 scripts/imap_mail.py draft-edit-apply EDIT_PREVIEW_ID EDIT_PREVIEW_HASH
+python3 scripts/imap_mail.py draft-edit-status EDIT_PREVIEW_ID
 python3 scripts/imap_mail.py send-check example-work
 python3 scripts/imap_mail.py send-preview --request /private/send-request.json
 python3 scripts/imap_mail.py send-apply SEND_PREVIEW_ID SEND_PREVIEW_HASH --authorization send
@@ -204,6 +222,18 @@ python3 scripts/imap_mail.py send-status SEND_PREVIEW_ID
 
 A new message supplies explicit `to` (an array) and `subject` instead of `reply`. Optional fields are `from_address`, `cc`, and `reply_all`; Reply-All is not the default. CLI output is JSON; errors return exit 1 with a sanitized code. Send commands are separate from draft commands and require opt-in SMTP plus the specific human instruction; a CLI marker alone does not establish consent. SMTP permission setup is provided through the persistent MCP server's private browser wizard.
 
+`/private/edit-request.json` uses only the exact existing draft reference and requested text changes:
+
+```json
+{
+  "account": "example-work",
+  "draft": {"account": "example-work", "mailbox": "Drafts", "uidvalidity": "42", "uid": "456"},
+  "replacements": [{"old_text": "The previous sentence.", "new_text": "The corrected sentence."}]
+}
+```
+
+All preview commands accept `--input` and its backward-compatible alias `--request`. The JSON file is private email data, not a repository example to populate with real correspondence.
+
 ## Verification
 
 Offline tests do not load real credentials or contact mail servers:
@@ -218,13 +248,17 @@ For ordinary readiness, run `mail_check`; it never appends a test draft. When th
 
 We inspected [ni-c/imap-mcp](https://github.com/ni-c/imap-mcp) and [Tiangong's email-imap-append skill](https://github.com/tiangong-ai/agent-skills/tree/main/email-imap-append). They demonstrate useful existing approaches, but this package does not reuse their code. It extends the existing standard-library reader with a narrow, separately gated draft operation and durable uncertain-write handling.
 
-Primary protocol references: [IMAP APPEND](https://www.rfc-editor.org/rfc/rfc9051.html#section-6.3.12), [special-use Drafts folders](https://www.rfc-editor.org/rfc/rfc6154.html), and [reply identification fields](https://www.rfc-editor.org/rfc/rfc5322.html#section-3.6.4). Portable stdio packaging follows [OpenAI's desktop-only plugin documentation](https://developers.openai.com/plugins/deploy/desktop-only#configure-a-local-mcp-server).
+Primary protocol references: [IMAP APPEND](https://www.rfc-editor.org/rfc/rfc9051.html#section-6.3.12), [UIDPLUS targeted expunge](https://www.rfc-editor.org/rfc/rfc4315.html#section-2.1), [special-use Drafts folders](https://www.rfc-editor.org/rfc/rfc6154.html), and [reply identification fields](https://www.rfc-editor.org/rfc/rfc5322.html#section-3.6.4). Portable stdio packaging follows [OpenAI's desktop-only plugin documentation](https://developers.openai.com/plugins/deploy/desktop-only#configure-a-local-mcp-server).
 
 ## Distribution boundary
 
 This is a local stdio package for supported Codex and Claude Code installations on Mac/Linux. It does not install a connector in ordinary ChatGPT or Claude web/mobile chats, host a multiuser service, or deploy alongside Mailroom. Those need a separately secured remote integration. Windows is not supported by the POSIX journal locking implementation.
 
 The package contains generic code and example identities only, not the author's account configuration or secrets. The source and tagged releases are distributed from [romanskk47/imap-mail](https://github.com/romanskk47/imap-mail) under the [MIT License](LICENSE). GitHub publication is not approval or listing in an official ChatGPT/Claude plugin directory. Provider OAuth registration, web/mobile connectors and any official-directory submission remain separate work.
+
+### Version 0.5.0
+
+Adds reviewed text edits to existing unsent drafts without a desktop mail client. The editor preserves recipients, thread, signature and attachments, retains a private original MIME backup, verifies the replacement, then retires only the exact original UID using UIDPLUS. Status is remotely read-only; interrupted edits reuse the same journal and never replay APPEND. There are no general deletion tools or implicit sends.
 
 ### Version 0.4.0
 

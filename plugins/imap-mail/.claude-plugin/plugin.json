@@ -1,7 +1,7 @@
 {
   "name": "imap-mail",
-  "version": "0.4.0",
-  "description": "Read IMAP mail, save unsent drafts or submit explicitly authorized SMTP messages with private signatures and attachments. No deletion.",
+  "version": "0.5.0",
+  "description": "Read IMAP mail, create or edit unsent drafts, or explicitly send reviewed messages over opt-in SMTP. Private signatures and attachments.",
   "author": {"name": "Piotr Romański"},
   "repository": "https://github.com/romanskk47/imap-mail",
   "homepage": "https://github.com/romanskk47/imap-mail",

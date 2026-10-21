@@ -1,12 +1,12 @@
 {
   "name": "imap-mail-plugins",
-  "description": "Local email reading, unsent drafts and explicitly authorized SMTP submissions for AI agents.",
+  "description": "Local email reading, unsent draft creation/editing and explicitly authorized SMTP submissions for AI agents.",
   "owner": {"name": "Piotr Romański"},
   "plugins": [
     {
       "name": "imap-mail",
       "source": "./plugins/imap-mail",
-      "description": "Read IMAP mail, save verified drafts or explicitly send reviewed messages over opt-in SMTP."
+      "description": "Read IMAP mail, create/edit verified drafts or explicitly send reviewed messages over opt-in SMTP."
     }
   ]
 }
