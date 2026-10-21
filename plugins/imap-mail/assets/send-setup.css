@@ -1,0 +1,26 @@
+:root { color-scheme: light; font-family: system-ui, sans-serif; color: #172b42; background: #f4f7fb; line-height: 1.5; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 24px 16px; }
+main { max-width: 700px; margin: 0 auto; padding: 30px; background: #fff; border: 1px solid #d6e0eb; border-radius: 16px; }
+h1 { font-size: clamp(1.6rem, 5vw, 2.1rem); line-height: 1.2; margin: 8px 0 18px; }
+h2 { font-size: 1.3rem; }
+.eyebrow { color: #46617d; font-size: .86rem; letter-spacing: .04em; margin: 0; }
+.identity { border-left: 4px solid #2263a8; background: #edf5ff; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.notice { font-size: .92rem; color: #4c5c6e; }
+fieldset { border: 0; padding: 0; margin: 24px 0 0; min-width: 0; }
+legend { font-weight: 700; margin-bottom: 8px; }
+label { display: block; font-weight: 600; margin-top: 16px; }
+input:not([type=checkbox]), select { display: block; width: 100%; min-width: 0; font: inherit; padding: 10px; margin-top: 5px; border: 1px solid #71869c; border-radius: 7px; background: #fff; color: inherit; }
+input:focus, select:focus, button:focus-visible { outline: 3px solid #7bb4ed; outline-offset: 2px; }
+.row { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+.hint { font-size: .85rem; color: #4c5c6e; margin-top: 6px; }
+.check { display: flex; gap: 10px; font-size: .95rem; font-weight: 400; align-items: flex-start; }
+.check input { width: 19px; height: 19px; flex-shrink: 0; margin: 3px 0 0; accent-color: #18599a; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+button { font: inherit; font-weight: 650; padding: 11px 16px; border-radius: 7px; border: 1px solid #18599a; color: #fff; background: #18599a; cursor: pointer; }
+button.secondary { background: #fff; color: #18599a; }
+button:disabled { cursor: default; opacity: .55; }
+#review { background: #eff9f1; border: 1px solid #7da58a; border-radius: 10px; padding: 18px; margin-top: 24px; }
+#status { min-height: 1.5em; overflow-wrap: anywhere; }
+[hidden] { display: none !important; }
+@media (max-width: 520px) { body { padding: 12px 8px; } main { padding: 20px 16px; } .row { grid-template-columns: 1fr; gap: 0; } button { width: 100%; } }

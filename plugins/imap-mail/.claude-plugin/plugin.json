@@ -1,10 +1,10 @@
 {
   "name": "imap-mail",
-  "version": "0.3.1",
-  "description": "Read IMAP mail and prepare verified, unsent reply drafts with private signatures and attachments. No sending or deletion.",
+  "version": "0.4.0",
+  "description": "Read IMAP mail, save unsent drafts or submit explicitly authorized SMTP messages with private signatures and attachments. No deletion.",
   "author": {"name": "Piotr Romański"},
   "repository": "https://github.com/romanskk47/imap-mail",
   "homepage": "https://github.com/romanskk47/imap-mail",
   "license": "MIT",
-  "keywords": ["email", "imap", "drafts", "reply", "signatures"]
+  "keywords": ["email", "imap", "smtp", "drafts", "reply", "signatures"]
 }

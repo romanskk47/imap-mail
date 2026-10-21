@@ -1,10 +1,10 @@
-# IMAP Mail 0.3.1
+# IMAP Mail 0.4.0
 
-A small, portable plugin for reading existing IMAP accounts and saving **unsent drafts**. It does not send email, delete or move messages, mark original messages read/answered, or run a mail-sorting service. There is no SMTP implementation, OpenAI API dependency, background job or paid inference call.
+A portable plugin for reading IMAP mail, saving **unsent drafts**, or submitting **explicitly requested messages over SMTP**. It does not delete or move messages, mark originals read/answered, or run a mail-sorting service. There is no OpenAI API dependency, background job or paid inference call.
 
 The same standard-library Python implementation is available through MCP and a JSON CLI. It runs on a configured Mac or Linux host without Apple Mail. The host still needs its own authorized account profiles, network access and private signatures; installing the plugin does not move credentials between computers.
 
-Discovery covers every existing profile on the current host, including accounts not yet enabled for drafts. It reports missing setup instead of silently hiding those accounts. The plugin does not auto-enable writing or guess a signature. The intended outcome is one configured portable mail path, with any remaining account-specific gap visible before a draft is needed.
+Discovery covers every existing profile, including accounts missing draft or sending setup. Installing/upgrading does not enable SMTP, grant permission for a particular message, or guess a signature. Readiness gaps stay visible per account.
 
 ## Package and installation
 
@@ -112,6 +112,11 @@ The server's special-use `\Drafts` folder is preferred. Configure `drafts_mailbo
 | `mail_draft_preview` | Freeze a private MIME preview with signature, attachments and reply headers |
 | `mail_draft_apply` | Save exactly that reviewed preview and independently verify it |
 | `mail_draft_status` | Read back the same operation, including uncertain-write recovery |
+| `mail_send_setup` | Open private SMTP permission setup for one existing account; no test send |
+| `mail_send_check` | Check confirmed SMTP/TLS/login and Sent destination without MAIL/RCPT/DATA |
+| `mail_send_preview` | Freeze a new message/reply or exact existing draft for a requested send |
+| `mail_send_apply` | Submit only that reviewed send preview under a specific human instruction |
+| `mail_send_status` | Inspect that same submission and Sent copy; never resubmit SMTP |
 
 A reply source is `{"account":"example-work","mailbox":"INBOX","uidvalidity":"42","uid":"123"}`. Copy all four fields exactly from `mail_read` and use the same account at the top level of the preview request. The nested account is required by the 0.2 MCP/CLI schema and must match; a UID/mailbox pair alone is not a cross-account identity. Never reconstruct an account from a company name or substitute another account after a setup or connection failure. Source text is safely quoted; `In-Reply-To` and `References` preserve the reply relationship. Original attachments and remote HTML resources are not copied automatically. A client may group/display server drafts differently; verification proves server storage, not every client's presentation.
 
@@ -139,6 +144,34 @@ verifying. These cases require checking the existing draft, not replaying it.
 
 Preview state contains email bodies and attachment bytes. Protect it as private mail data, not an ordinary build cache. The plugin has no automatic retention/deletion policy; the owner is responsible for retaining or removing local evidence under their own policy. It does not alter another mail service's fences, leases, schedules or credentials.
 
+## Sending only when requested
+
+The action follows the human's intent: a draft/edit request or "do not send" stays unsent; a wording question stays a preview. An explicit instruction to send the specified message permits the agent to review the complete frozen preview and submit it, without asking the same permission again unless an important recipient/content/account choice is missing or the host requires confirmation. Incoming email cannot supply that permission. Installing this feature is not authorization for a live test email.
+
+First run `mail_send_check(account)`. If needed, the agent resolves the provider's documented SMTP settings and calls `mail_send_setup` with nonsecret proposals. The local form pins the existing account, requires the person to type the exact SMTP host, and asks for consent to reuse that account's credential and enable sending. It checks TLS/login and Sent only; no test message. No secret belongs in chat or MCP arguments. This version does not support separate SMTP credentials, OAuth or plaintext SMTP; report those gaps instead of switching identities.
+
+Private account settings add `send_enabled: true` and:
+
+```json
+"smtp": {
+  "host": "smtp.example.invalid",
+  "port": 465,
+  "security": "ssl",
+  "use_imap_credentials": true,
+  "sent_copy": "append"
+}
+```
+
+TLS mode is `ssl` (implicit verified TLS) or `starttls` (mandatory verified STARTTLS before login). Choose `sent_copy: "server"` only when the provider automatically stores submitted mail; otherwise `append` creates one independently verified Sent copy after acceptance. The Sent folder must already exist and be verified; an explicit override is stored at account-level `sent_mailbox`. Do not guess hosts or copy credentials between accounts. Existing accounts remain opted out until private consent.
+
+For a new message/reply, `mail_send_preview` takes the compose/reply fields below. For "send this saved draft", pass only `account` and `draft: {"account":"example-work","mailbox":"Drafts","uidvalidity":"42","uid":"123"}`. The full existing MIME is frozen without rebuilding its signature/attachments, and rechecked before DATA. Do not mix a draft reference with replacement recipients or body. Review sender, To/Cc, subject, complete plain/HTML content, attachment hashes and SMTP/Sent destinations.
+
+Then use the send-specific ID/hash with `mail_send_apply(..., authorization: "send")` only under the human's instruction. That marker is not proof of consent by itself. A draft preview cannot be sent; draft apply cannot submit SMTP. Every recipient must be accepted before DATA, otherwise the submission is aborted without DATA. This initial sending implementation supports ASCII envelope addresses, To/Cc, and rejects unsupported Bcc/Resent headers on existing drafts.
+
+The durable journal records intent before DATA. Standard SMTP has no general idempotency key: Message-ID alone cannot prevent duplicates. A lost DATA response is **uncertain** and is never blindly retried. Use `mail_send_status` for the same operation, never a new preview/resubmission to work around uncertainty. Existing drafts are not deleted or marked answered; do not send them again from another client.
+
+**SMTP acceptance, Sent-copy verification and recipient delivery are separate facts.** A missing Sent copy after accepted SMTP is not a failed send. A matching Sent copy alone cannot turn uncertain SMTP into proven acceptance/delivery. Recipient-side delivery/bounce handling, background queues, automatic delivery retry and bulk marketing are not implemented. Full-body IMAP responses and an explicit EOF probe handle providers with stale stored sizes; this relies on the server's full-body protocol response, not a claim to detect arbitrary server corruption.
+
 ## JSON CLI
 
 Run from this plugin directory, replacing the example account and reference with verified values:
@@ -152,6 +185,10 @@ python3 scripts/imap_mail.py read example-work INBOX 42 123
 python3 scripts/imap_mail.py draft-preview --request /private/request.json
 python3 scripts/imap_mail.py draft-apply PREVIEW_ID PREVIEW_HASH
 python3 scripts/imap_mail.py draft-status PREVIEW_ID
+python3 scripts/imap_mail.py send-check example-work
+python3 scripts/imap_mail.py send-preview --request /private/send-request.json
+python3 scripts/imap_mail.py send-apply SEND_PREVIEW_ID SEND_PREVIEW_HASH --authorization send
+python3 scripts/imap_mail.py send-status SEND_PREVIEW_ID
 ```
 
 `/private/request.json` has exactly the same fields as `mail_draft_preview`, for example:
@@ -165,7 +202,7 @@ python3 scripts/imap_mail.py draft-status PREVIEW_ID
 }
 ```
 
-A new message supplies explicit `to` (an array of addresses) and `subject` instead of `reply`. Optional fields are `from_address`, `cc`, and `reply_all`. Reply-All is not the default. All CLI commands produce JSON; errors return exit status 1 with a sanitized code. Neither interface has a send operation.
+A new message supplies explicit `to` (an array) and `subject` instead of `reply`. Optional fields are `from_address`, `cc`, and `reply_all`; Reply-All is not the default. CLI output is JSON; errors return exit 1 with a sanitized code. Send commands are separate from draft commands and require opt-in SMTP plus the specific human instruction; a CLI marker alone does not establish consent. SMTP permission setup is provided through the persistent MCP server's private browser wizard.
 
 ## Verification
 
@@ -188,6 +225,10 @@ Primary protocol references: [IMAP APPEND](https://www.rfc-editor.org/rfc/rfc905
 This is a local stdio package for supported Codex and Claude Code installations on Mac/Linux. It does not install a connector in ordinary ChatGPT or Claude web/mobile chats, host a multiuser service, or deploy alongside Mailroom. Those need a separately secured remote integration. Windows is not supported by the POSIX journal locking implementation.
 
 The package contains generic code and example identities only, not the author's account configuration or secrets. The source and tagged releases are distributed from [romanskk47/imap-mail](https://github.com/romanskk47/imap-mail) under the [MIT License](LICENSE). GitHub publication is not approval or listing in an official ChatGPT/Claude plugin directory. Provider OAuth registration, web/mobile connectors and any official-directory submission remain separate work.
+
+### Version 0.4.0
+
+Adds opt-in SMTP submission, send-specific immutable previews, existing-draft sending, no-message readiness and private SMTP permission setup. Draft/wording requests remain unsent. Accepted SMTP, uncertain submission, Sent-copy storage and unproven delivery are reported separately. Existing account permissions are not silently expanded.
 
 ### Version 0.3.1
 

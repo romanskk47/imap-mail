@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Enable sending — IMAP Mail</title>
+  <link rel="stylesheet" href="/send-setup.css">
+  <script src="/send-setup.js" defer></script>
+</head>
+<body>
+<main>
+  <p class="eyebrow">IMAP Mail · private local setup</p>
+  <h1>Enable sending for one account</h1>
+  <p>This changes only sending settings. Your existing signature, identity and drafts stay as they are. No test email will be sent.</p>
+  <div class="identity" id="identity">Loading your selected account…</div>
+  <p class="notice">Use SMTP settings from your provider or administrator. The agent does not infer a mail server. OAuth-only providers are not supported by this password-reuse setup.</p>
+  <form id="setup-form">
+    <fieldset id="fields" disabled>
+      <legend>Confirm where this account may send</legend>
+      <label for="host">SMTP server hostname</label>
+      <input id="host" name="host" autocomplete="off" spellcheck="false" required maxlength="253" placeholder="smtp.example.com">
+      <div class="row">
+        <div><label for="security">Encrypted connection</label><select id="security" required><option value="">Choose…</option><option value="ssl">Implicit TLS</option><option value="starttls">Required STARTTLS</option></select></div>
+        <div><label for="port">Port</label><input id="port" type="number" min="1" max="65535" required inputmode="numeric"></div>
+      </div>
+      <label for="host-confirmation">Type the exact SMTP hostname again</label>
+      <input id="host-confirmation" autocomplete="off" spellcheck="false" required maxlength="253" aria-describedby="host-help">
+      <p class="hint" id="host-help">Do not confirm an unfamiliar host. Your existing password is used only after this confirmation, over certificate-verified TLS.</p>
+      <label for="sent-copy">How should a sent copy be kept?</label>
+      <select id="sent-copy" required><option value="">Choose your provider's behavior…</option><option value="server">Provider saves the Sent copy</option><option value="append">Plugin saves the Sent copy</option></select>
+      <p class="hint">Setup verifies the account's existing Sent folder. It never guesses or creates a folder and never writes a test message.</p>
+      <label class="check"><input id="reuse-consent" type="checkbox" required><span>I authorize reusing this account's existing IMAP username and password for the SMTP host I confirmed above. No password will be shown in chat.</span></label>
+      <label class="check"><input id="enable-consent" type="checkbox" required><span>I want to enable sending for this account. Messages may be sent only when I ask my agent to send; “draft only” still means do not send.</span></label>
+      <div class="actions"><button id="check" type="submit">Check connection — no email sent</button><button id="cancel" type="button" class="secondary">Cancel</button></div>
+    </fieldset>
+  </form>
+  <section id="review" hidden aria-labelledby="review-title">
+    <h2 id="review-title">Connection checked. Nothing sent.</h2>
+    <p id="summary"></p>
+    <p>Save now to enable sending for this account only. This does not send any message or alter your existing drafts.</p>
+    <button id="save" type="button">Save and enable sending</button>
+  </section>
+  <p id="status" role="status" aria-live="polite"></p>
+</main>
+</body>
+</html>

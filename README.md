@@ -1,8 +1,10 @@
 # IMAP Mail
 
-Read your existing email and save reviewed, **unsent drafts** from Codex or Claude Code. The agent handles setup; you enter credentials only in a private form opened locally in your browser.
+Read your existing email, save reviewed **unsent drafts**, or **send a specific message when you explicitly ask** from Codex or Claude Code. The agent handles setup; credentials and account permissions stay private on your computer.
 
-This plugin has no send operation or SMTP implementation. It does not delete, move, sort or mark original messages read. It supports signatures, local attachments and replies in the original conversation, with independent server readback and protection against duplicate saves.
+The action follows your request: "prepare a draft" stays unsent, "what should I reply?" stays a preview, and "send this message to X" uses a separate reviewed SMTP submission. Sending is disabled per account until you enable it through private setup. The plugin does not delete, move, sort or mark original messages read. Signatures, attachments and reply headers are preserved.
+
+SMTP acceptance does not prove delivery. A lost submission response is reported as uncertain and is never blindly retried; a copy in Sent is tracked separately. See the [sending workflow](plugins/imap-mail/README.md#sending-only-when-requested).
 
 ## Give this to your agent
 
@@ -17,10 +19,10 @@ Every person connects their own mailbox. Installing this repository does not gra
 ## Compatibility and limits
 
 - Local **Codex or Claude Code**, on **macOS or Linux**, with **Python 3.10+**. Only Python's standard library is needed.
-- A mailbox allowing password/app-password IMAP access over verified TLS. **OAuth-only accounts are not supported.** A provider's policy may disable password-based IMAP.
+- A mailbox allowing password/app-password IMAP access over verified TLS. Optional sending also needs authenticated SMTP over implicit TLS or STARTTLS. **OAuth-only accounts are not supported.** Provider or administrator policies may disable password-based access.
 - Setup stores credentials in a private local **plaintext password file (0600)**, not encrypted Keychain storage. Use a revocable app password where available; protect the computer and backups.
 - Setup supports new accounts, plain-text signatures or an explicit no-signature choice. Existing HTML/CID signatures can be configured privately; desktop signatures are not imported automatically.
-- Attachments require an explicitly approved local directory. Nothing is sent: you review and click Send in your usual mail client.
+- New local attachments require an explicitly approved directory. Existing server drafts can be frozen for a send-specific preview without rebuilding their signature or attachments; sending does not remove the old draft.
 - This is **not a ChatGPT/Claude web or mobile connector**, Windows package, cloud service or background mail sorter. A remote host needs its own authorized configuration.
 
 ## Installation reference for agents
@@ -42,6 +44,8 @@ claude plugin install imap-mail@imap-mail-plugins --scope user
 ```
 
 Reload/restart the client or open a new session as required to expose the tools. Then follow the bundled [Setup skill](plugins/imap-mail/skills/setup/SKILL.md): inventory accounts, reuse working access, run a read-only readiness check, or open private setup for a new account. Do not create a test draft unless the person explicitly requests one.
+
+When the person requests sending, run `mail_send_check` for that exact account. If SMTP is not enabled, resolve the provider's documented submission settings and call `mail_send_setup`. The local form requires the person to type the exact SMTP host and approve reuse of that account's credential and sending permission. Setup checks login and the Sent folder only; it never sends a test email. Never ask for a password in chat or silently enable sending on all discovered accounts.
 
 The marketplace name is `imap-mail-plugins`; the plugin name is `imap-mail`. Both public marketplace catalogs point only to `plugins/imap-mail`. No private marketplace is required. Publication here does not imply listing or approval in an official plugin directory.
 

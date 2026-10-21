@@ -13,7 +13,7 @@ from .mcp import InvalidArguments, dispatch_tool, error_payload, make_service
 
 
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(description="Read IMAP and save verified unsent drafts; never sends")
+    result = argparse.ArgumentParser(description="Read IMAP, save unsent drafts, or submit explicitly authorized SMTP messages")
     result.add_argument("--config", help="Private settings JSON (or MAIL_DRAFTS_CONFIG)")
     result.add_argument("--state-dir", help="Private journal directory (or MAIL_DRAFTS_STATE_DIR)")
     commands = result.add_subparsers(dest="command", required=True)
@@ -43,6 +43,16 @@ def parser() -> argparse.ArgumentParser:
     apply.add_argument("preview_hash")
     status = commands.add_parser("draft-status")
     status.add_argument("preview_id")
+    send_check = commands.add_parser("send-check", help="Check separately enabled SMTP without sending a message")
+    send_check.add_argument("account")
+    send_preview = commands.add_parser("send-preview", help="Freeze content for an explicit send request; does not send")
+    send_preview.add_argument("--request", required=True)
+    send_apply = commands.add_parser("send-apply", help="Submit the exact reviewed message only with human authorization")
+    send_apply.add_argument("preview_id")
+    send_apply.add_argument("preview_hash")
+    send_apply.add_argument("--authorization", choices=["send"], required=True)
+    send_status = commands.add_parser("send-status", help="Inspect submission status without SMTP resubmission")
+    send_status.add_argument("preview_id")
     return result
 
 
@@ -51,7 +61,7 @@ def request(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
     command = values.pop("command")
     values.pop("config")
     values.pop("state_dir")
-    if command == "draft-preview":
+    if command in ("draft-preview", "send-preview"):
         path = Path(values["request"]).expanduser()
         if not path.is_file() or path.stat().st_size > 2 * 1024 * 1024:
             raise InvalidArguments("Preview request must be a JSON file no larger than 2 MiB")
@@ -59,9 +69,10 @@ def request(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
             body = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise InvalidArguments("Preview request is not readable UTF-8 JSON") from exc
-        return "mail_draft_preview", body
+        return "mail_draft_preview" if command == "draft-preview" else "mail_send_preview", body
     names = {"accounts": "mail_accounts", "check": "mail_check", "folders": "mail_folders", "search": "mail_search",
-             "read": "mail_read", "draft-apply": "mail_draft_apply", "draft-status": "mail_draft_status"}
+             "read": "mail_read", "draft-apply": "mail_draft_apply", "draft-status": "mail_draft_status",
+             "send-check": "mail_send_check", "send-apply": "mail_send_apply", "send-status": "mail_send_status"}
     return names[command], {key: value for key, value in values.items() if value is not None}
 
 

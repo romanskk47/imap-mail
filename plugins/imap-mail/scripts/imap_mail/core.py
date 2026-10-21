@@ -839,6 +839,8 @@ class DraftService:
         config = self._config()
         with self._lock(config) as root:
             path, record, raw = self._load(root, preview_id)
+            if record["immutable"].get("operation", "draft") != "draft":
+                raise DraftError("PREVIEW_OPERATION_MISMATCH")
             if not isinstance(preview_hash, str) or preview_hash != record["preview_hash"]:
                 raise DraftError("PREVIEW_HASH_MISMATCH")
             entry, profile = self._bound(config, record)
@@ -893,6 +895,8 @@ class DraftService:
         config = self._config()
         with self._lock(config) as root:
             path, record, raw = self._load(root, preview_id)
+            if record["immutable"].get("operation", "draft") != "draft":
+                raise DraftError("PREVIEW_OPERATION_MISMATCH")
             entry, profile = self._bound(config, record)
             if record["state"] in ("attempted", "uncertain", "verified"):
                 return self._reconcile(path, record, raw, entry, profile)
