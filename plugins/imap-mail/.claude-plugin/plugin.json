@@ -1,7 +1,7 @@
 {
   "name": "imap-mail",
-  "version": "0.6.0",
-  "description": "Read IMAP mail, create or edit unsent drafts, or explicitly send reviewed messages over opt-in SMTP. Private signatures and attachments.",
+  "version": "0.7.0",
+  "description": "AI email tools independent of desktop mail apps: read, draft, edit, mark messages and explicitly send. Capability discovery and compact verified workflows.",
   "author": {"name": "Piotr Romański"},
   "repository": "https://github.com/romanskk47/imap-mail",
   "homepage": "https://github.com/romanskk47/imap-mail",

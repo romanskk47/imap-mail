@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "imap-mail",
-  "version": "0.6.0",
-  "description": "Read IMAP mail, create or edit unsent drafts, or explicitly send reviewed messages over opt-in SMTP. Private signatures and attachments.",
+  "version": "0.7.0",
+  "description": "AI email tools independent of desktop mail apps: read, draft, edit, mark messages and explicitly send. Capability discovery and compact verified workflows.",
   "author": {"name": "Piotr Romański"},
   "repository": "https://github.com/romanskk47/imap-mail",
   "homepage": "https://github.com/romanskk47/imap-mail",
@@ -13,8 +13,8 @@
       "onboardingSkill": "./skills/setup/SKILL.md",
       "interface": {
         "displayName": "IMAP Mail",
-        "shortDescription": "Read mail, create/edit drafts or explicitly send",
-        "longDescription": "Read IMAP mail, create or edit reviewed unsent drafts, or submit explicitly requested SMTP messages. Editing verifies a replacement before retiring only the exact original and keeps a private backup. Sending requires separate opt-in and a send-specific preview. Blocks blind uncertain retries. Credentials stay on the configured host. No generic deletion, OAuth, cloud hosting or background sorting."
+        "shortDescription": "Manage email through AI, independently of mail apps",
+        "longDescription": "Discover connected accounts and capabilities; search/read messages, prepare or edit drafts with signatures and attachments, mark read/unread or starred, and send when requested. Compact reviews preserve full message content and verification. Runs on a configured Mac or Linux host without a mail app. Authenticated cloud connection, folder moves and provider OAuth are not yet implemented."
       }
     }
   }

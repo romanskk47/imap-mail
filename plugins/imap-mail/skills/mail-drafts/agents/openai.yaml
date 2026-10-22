@@ -1,4 +1,4 @@
 interface:
   display_name: "IMAP Mail"
-  short_description: "Read, create/edit drafts or explicitly send email"
-  default_prompt: "Use $mail-drafts to prepare an unsent reply with my configured signature and attachments."
+  short_description: "Read and manage email directly through IMAP/SMTP"
+  default_prompt: "Use $mail-drafts to carry out my requested email task on the correct configured account. Discover available functions and follow the relevant workflow; draft requests stay unsent."
