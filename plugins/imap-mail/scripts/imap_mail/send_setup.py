@@ -1,8 +1,6 @@
-"""Private, existing-account SMTP opt-in; no secrets enter tool arguments.
+"""Existing-account SMTP configuration, through an agent or optional private UI.
 
-The browser authorizes reuse of one pinned IMAP credential for a separately
-confirmed SMTP host. Checks cannot submit email. Saving changes only that
-account's send_enabled/smtp settings, never its identity or draft configuration.
+Both paths check before saving; neither submits email or exposes credentials.
 """
 
 from __future__ import annotations
@@ -194,6 +192,31 @@ class SendSetupSession:
             return {"status": "saved", "account": self.account, "send_enabled": True,
                     "smtp": copy.deepcopy(candidate["smtp"]), "sent_mailbox": candidate["sent_mailbox"],
                     "mailbox_writes": 0, "messages_sent": 0}
+
+
+@setup.guarded
+def configure_sending(config_path=None, account=None, host=None, port=None,
+                      security=None, sent_copy=None, authorization=None, checker=None):
+    """Configure one account under explicit owner intent, without a browser.
+
+    The marker records caller intent, not proof of consent. The agent must have
+    the owner's authorization and a verified provider endpoint before calling.
+    Credentials stay pinned to the existing profile and never enter arguments.
+    """
+    if authorization != "enable_sending":
+        raise SendSetupError("SEND_ENABLE_AUTHORIZATION_REQUIRED")
+    proposal = validate_proposal(account, host, port, security, sent_copy)
+    session = SendSetupSession(config_path=config_path, account=account, checker=checker)
+    try:
+        payload = {key: value for key, value in proposal.items() if key != "account"}
+        payload.update(host_confirmation=proposal.get("host"), host_confirmed=True,
+                       credential_reuse_consent=True, enable_sending_consent=True)
+        checked = session.check(payload)
+        result = session.save(checked["check_id"])
+        result["connection_checked"] = True
+        return result
+    finally:
+        session.close()
 
 
 class _SendHandler(setup_web._Handler):

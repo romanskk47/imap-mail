@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "imap-mail",
-  "version": "0.6.0",
-  "description": "Read IMAP mail, create or edit unsent drafts, or explicitly send reviewed messages over opt-in SMTP. Private signatures and attachments.",
+  "version": "0.6.1",
+  "description": "Agent-operated IMAP/SMTP email: read, draft, edit and explicitly send with account-bound verification.",
   "author": {"name": "Piotr Romański"},
   "repository": "https://github.com/romanskk47/imap-mail",
   "homepage": "https://github.com/romanskk47/imap-mail",
@@ -14,7 +14,7 @@
       "interface": {
         "displayName": "IMAP Mail",
         "shortDescription": "Read mail, create/edit drafts or explicitly send",
-        "longDescription": "Read IMAP mail, create or edit reviewed unsent drafts, or submit explicitly requested SMTP messages. Editing verifies a replacement before retiring only the exact original and keeps a private backup. Sending requires separate opt-in and a send-specific preview. Blocks blind uncertain retries. Credentials stay on the configured host. No generic deletion, OAuth, cloud hosting or background sorting."
+        "longDescription": "Email tools for AI agents: search and read mail, compose or edit drafts, and send explicitly requested messages. Reuse configured accounts without a browser. Includes signatures, To/Cc, attachments, verified previews and duplicate-safe recovery. Credentials stay on the configured host."
       }
     }
   }

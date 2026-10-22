@@ -1,7 +1,7 @@
 {
   "name": "imap-mail",
-  "version": "0.6.0",
-  "description": "Read IMAP mail, create or edit unsent drafts, or explicitly send reviewed messages over opt-in SMTP. Private signatures and attachments.",
+  "version": "0.6.1",
+  "description": "Agent-operated IMAP/SMTP email: read, draft, edit and explicitly send with account-bound verification.",
   "author": {"name": "Piotr Romański"},
   "repository": "https://github.com/romanskk47/imap-mail",
   "homepage": "https://github.com/romanskk47/imap-mail",
