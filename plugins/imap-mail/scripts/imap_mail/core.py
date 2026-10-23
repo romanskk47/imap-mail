@@ -366,7 +366,7 @@ class DraftService:
     def _profiles(self, config):
         try:
             profiles_dir = config.get("profiles_dir")
-            return read_access.profiles(str(self._resolve(profiles_dir)) if profiles_dir else None)
+            return read_access.profile_inventory(str(self._resolve(profiles_dir)) if profiles_dir else None)
         except Exception:
             raise DraftError("PROFILE_DISCOVERY_FAILED") from None
 
@@ -377,9 +377,10 @@ class DraftService:
         if not isinstance(entry, dict):
             raise DraftError("INVALID_ACCOUNT_CONFIGURATION")
         profiles = self._profiles(config) if profiles is None else profiles
-        if account not in profiles:
-            raise DraftError("ACCOUNT_PROFILE_UNAVAILABLE")
-        profile = profiles[account]
+        try:
+            profile = profiles.require(account)
+        except read_access.MailError as exc:
+            raise DraftError(str(exc)) from None
         expected = entry.get("identity", {})
         if not isinstance(expected, dict):
             raise DraftError("INVALID_ACCOUNT_CONFIGURATION")
@@ -419,17 +420,21 @@ class DraftService:
         config = config or {"version": 1, "accounts": {}}
         profiles = self._profiles(config)
         result = []
-        for account in sorted(set(profiles) | set(config["accounts"])):
+        for account in sorted(set(profiles.valid) | set(profiles.invalid) | set(config["accounts"])):
             configured = account in config["accounts"]
             row = {"account": account, "configured": configured,
                    "read_ready": False, "drafts_ready": False,
                    "drafts_enabled": False, "from_addresses": [],
                    "default_from": None, "signature_configured": False,
                    "connection": "not_checked", "issues": []}
-            profile = profiles.get(account)
+            profile = profiles.valid.get(account)
             if profile:
                 # These are host-profile identifiers, never credential fields.
                 row.update(profile_identity(profile))
+            if account in profiles.invalid:
+                row.update(status="needs_attention", issues=list(profiles.invalid[account]))
+                result.append(row)
+                continue
             if not configured:
                 row.update(status="setup_needed", issues=["ACCOUNT_NOT_CONFIGURED"])
                 result.append(row)
@@ -455,8 +460,12 @@ class DraftService:
             result.append(row)
         needs_setup = missing_config or not config["accounts"] or not result
         status = "setup_needed" if needs_setup else "ready" if all(r["status"] == "ready" for r in result) else "needs_attention"
+        if profiles.discovery_errors:
+            status = "needs_attention"
         response = {"status": status, "accounts": result, "mailbox_writes": 0,
-                    "discovered_accounts": len(profiles), "configured_accounts": len(config["accounts"])}
+                    "discovered_accounts": len(profiles.valid) + len(profiles.invalid),
+                    "configured_accounts": len(config["accounts"]),
+                    "profile_discovery_issues": list(profiles.discovery_errors)}
         if config.get("preferred_transport") == "imap":
             response["preferred_transport"] = "imap"
         return response

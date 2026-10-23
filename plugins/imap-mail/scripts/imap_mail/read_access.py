@@ -3,6 +3,7 @@
 import argparse
 import base64
 import datetime as dt
+from dataclasses import dataclass, field
 import email
 import email.policy
 import html
@@ -46,34 +47,84 @@ def private_file(path):
     return p
 
 
-def profiles(directory=None):
-    if directory is None and os.environ.get('MAIL_PROFILES_JSON'):
-        raw = json.loads(os.environ['MAIL_PROFILES_JSON'])
-        docs = raw if isinstance(raw, list) else [raw]
+@dataclass(frozen=True)
+class ProfileInventory:
+    valid: dict[str, dict] = field(repr=False)
+    invalid: dict[str, tuple[str, ...]]
+    discovery_errors: tuple[str, ...]
+
+    def require(self, account: str) -> dict:
+        if self.discovery_errors:
+            raise MailError('PROFILE_DISCOVERY_INCOMPLETE')
+        if account in self.invalid:
+            raise MailError(self.invalid[account][0])
+        if account not in self.valid:
+            raise MailError('ACCOUNT_PROFILE_UNAVAILABLE')
+        return self.valid[account]
+
+
+def _profile_json(value):
+    def unique_pairs(pairs):
+        result = {}
+        for key, item in pairs:
+            if key in result:
+                raise ValueError('Duplicate profile field')
+            result[key] = item
+        return result
+
+    return json.loads(value, object_pairs_hook=unique_pairs)
+
+
+def profile_inventory(directory=None) -> ProfileInventory:
+    documents, discovery_errors = [], []
+    if directory is None and 'MAIL_PROFILES_JSON' in os.environ:
+        try:
+            raw = _profile_json(os.environ['MAIL_PROFILES_JSON'])
+            documents = [(doc, None) for doc in (raw if isinstance(raw, list) else [raw])]
+        except (ValueError, UnicodeError):
+            discovery_errors.append('INVALID_PROFILE_JSON')
     else:
         root = Path(directory or os.environ.get('MAIL_PROFILES_DIR', '~/.secrets/services/mail')).expanduser()
-        docs = []
-        for path in sorted(root.rglob('*.json')):
-            d = json.loads(path.read_text())
-            if 'password' in d:
+        try:
+            if root.exists() and not root.is_dir():
+                raise OSError('Profile source is not a directory')
+            for path in sorted(root.rglob('*.json')):
+                try:
+                    documents.append((_profile_json(path.read_text(encoding='utf-8')), path))
+                except (ValueError, UnicodeError):
+                    discovery_errors.append('INVALID_PROFILE_JSON')
+                except OSError:
+                    discovery_errors.append('PROFILE_READ_FAILED')
+        except OSError:
+            discovery_errors.append('PROFILE_DIRECTORY_UNAVAILABLE')
+    valid, invalid = {}, {}
+    for document, path in documents:
+        account = document.get('id') if isinstance(document, dict) else None
+        if not isinstance(account, str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,80}', account):
+            discovery_errors.append('INVALID_ACCOUNT_ID')
+            continue
+        if account in valid or account in invalid:
+            valid.pop(account, None)
+            invalid[account] = ('DUPLICATE_ACCOUNT_ID',)
+            continue
+        try:
+            if path is not None and 'password' in document:
                 private_file(path)
-            docs.append(d)
-    out = {}
-    for d in docs:
-        for field in ('id', 'host', 'user', 'entity'):
-            if not d.get(field):
-                raise MailError('INCOMPLETE_PROFILE')
-            safe_text(d[field])
-        if not re.fullmatch(r'[a-zA-Z0-9_-]{1,80}', d['id']):
-            raise MailError('INVALID_ACCOUNT_ID')
-        if d['id'] in out:
-            raise MailError('DUPLICATE_ACCOUNT_ID')
-        if d.get('tls', True) is not True:
-            raise MailError('TLS_REQUIRED')
-        if not isinstance(d.get('port', 993), int) or not 1 <= d.get('port', 993) <= 65535:
-            raise MailError('INVALID_PORT')
-        out[d['id']] = d
-    return out
+            for name in ('host', 'user', 'entity'):
+                if not document.get(name):
+                    raise MailError('INCOMPLETE_PROFILE')
+                safe_text(document[name])
+            if document.get('tls', True) is not True:
+                raise MailError('TLS_REQUIRED')
+            if type(document.get('port', 993)) is not int or not 1 <= document.get('port', 993) <= 65535:
+                raise MailError('INVALID_PORT')
+        except MailError as exc:
+            invalid[account] = (str(exc),)
+        except OSError:
+            invalid[account] = ('PROFILE_READ_FAILED',)
+        else:
+            valid[account] = document
+    return ProfileInventory(valid, invalid, tuple(discovery_errors))
 
 
 def identity(d):
@@ -354,12 +405,12 @@ def run(args):
         if call_args.get('limit',0)>limit_max:
             raise MailError('BROKER_LIMIT_EXCEEDED')
         return broker_call(cfg,name,call_args)
-    docs = profiles(args.profiles_dir)
+    inventory = profile_inventory(args.profiles_dir)
     if args.command == 'accounts':
-        return [identity(d) for d in docs.values()]
-    if args.account not in docs:
-        raise MailError('ACCOUNT_UNAVAILABLE')
-    d = docs[args.account]
+        if inventory.invalid or inventory.discovery_errors:
+            raise MailError('PROFILE_DISCOVERY_INCOMPLETE')
+        return [identity(d) for d in inventory.valid.values()]
+    d = inventory.require(args.account)
     reader = Reader(d)
     try:
         if args.command == 'status':

@@ -28,6 +28,8 @@ Settings: `MAIL_DRAFTS_CONFIG` or `~/.config/imap-mail/settings.json`. State: `M
 
 Profiles require `id`, `host`, `user`, `entity`, TLS, and exactly one of `password`, `password_env`, `password_file`. Default: `~/.secrets/services/mail`; overrides: `MAIL_PROFILES_DIR` / `MAIL_PROFILES_JSON`. Never expose secrets in chat/arguments/logs. OAuth and bypassing a broker's write policy are unsupported.
 
+A configured `profiles_dir` selects that directory. Otherwise `MAIL_PROFILES_JSON` selects injected profiles, followed by `MAIL_PROFILES_DIR` or the default directory. Invalid injected JSON never falls back to files. Discovery reports invalid profiles by their exact ID. An invalid foreign ID does not disable a valid account; duplicate IDs remain blocked. Documents without a trustworthy ID appear in `profile_discovery_issues` and block account access until the ambiguity is resolved. Diagnostics contain fixed codes, not profile contents.
+
 Minimal private draft settings, with placeholder values:
 
 ```json
@@ -77,6 +79,8 @@ mail_send_configure(account, host, port, security, sent_copy,
 ```
 
 This reuses only the pinned account's credential, checks verified TLS/login and existing Sent, then saves atomically. No MAIL/RCPT/DATA or test email. The marker is not proof of consent, nor permission for any message.
+
+Existing profiles may come from files or `MAIL_PROFILES_JSON`. SMTP configuration changes only private account settings and preserves the profile source. The new-account form still requires a file-backed profile store because it creates credentials and profiles.
 
 Resolve settings from trusted provider documentation/current authorized settings, not the email domain alone. `security`: `ssl` or mandatory verified `starttls` before login. `sent_copy: "server"` means the provider saves sent mail; otherwise `"append"` makes one verified copy. Do not guess and duplicate it. Sent must exist; `sent_mailbox` pins a verified override.
 

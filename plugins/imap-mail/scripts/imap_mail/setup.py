@@ -5,8 +5,11 @@ logged. The sole persistence action is save(check_id), called after UI consent.
 No mailbox mutation, keychain import, SMTP, OAuth or discovery network is used.
 """
 
+from __future__ import annotations
+
 from contextlib import contextmanager
 import copy
+from dataclasses import dataclass, field
 import fcntl
 import functools
 import hashlib
@@ -45,6 +48,12 @@ KNOWN_PROVIDERS = {
 
 class SetupError(DraftError):
     """Fixed public diagnostic code; never arbitrary exception text."""
+
+
+@dataclass(frozen=True)
+class ConfigurationSnapshot:
+    config: dict = field(repr=False)
+    original: bytes | None = field(repr=False)
 
 
 def guarded(method):
@@ -302,14 +311,9 @@ class SetupSession:
                 result.update(status="suggested", provider=KNOWN_PROVIDERS[domain][0], host=host)
             return result
 
-    def _environment(self):
+    def _configuration(self):
         if os.environ.get("MAIL_BROKER_CONFIG"):
             raise SetupError("BROKER_SETUP_NOT_SUPPORTED")
-        if "MAIL_PROFILES_JSON" in os.environ:
-            raise SetupError("INJECTED_PROFILES_SETUP_NOT_SUPPORTED")
-
-    def _existing(self):
-        self._environment()
         _walk(self.config_path)
         _private_directory(self.config_path.parent)
         original = _private_file(self.config_path) if self.config_path.exists() else None
@@ -319,6 +323,13 @@ class SetupSession:
             raise SetupError("INVALID_SETUP_CONFIGURATION")
         if config.get("broker_config"):
             raise SetupError("BROKER_SETUP_NOT_SUPPORTED")
+        return ConfigurationSnapshot(config, original)
+
+    def _existing(self):
+        if "MAIL_PROFILES_JSON" in os.environ:
+            raise SetupError("INJECTED_PROFILES_SETUP_NOT_SUPPORTED")
+        snapshot = self._configuration()
+        config, original = snapshot.config, snapshot.original
         profiles_dir = _path(config.get("profiles_dir") or os.environ.get("MAIL_PROFILES_DIR", "~/.secrets/services/mail"), self.config_path.parent)
         _private_directory(profiles_dir)
         if profiles_dir.exists():
@@ -327,7 +338,10 @@ class SetupSession:
                 if not path.is_file() or path.stat().st_size > MAX_CONFIG_BYTES:
                     raise SetupError("PROFILE_DISCOVERY_FAILED")
         try:
-            profiles = read_access.profiles(str(profiles_dir))
+            inventory = read_access.profile_inventory(str(profiles_dir))
+            if inventory.invalid or inventory.discovery_errors:
+                raise SetupError("PROFILE_DISCOVERY_FAILED")
+            profiles = inventory.valid
         except Exception:
             raise SetupError("PROFILE_DISCOVERY_FAILED") from None
         return config, original, profiles_dir, profiles

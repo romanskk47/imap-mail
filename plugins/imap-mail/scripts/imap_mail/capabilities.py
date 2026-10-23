@@ -86,6 +86,7 @@ def capabilities(service, account=None):
             "accounts": [_account_view(row) for row in rows[:MAX_ACCOUNT_ROWS]],
             "accounts_total": total,
             "accounts_truncated": total > MAX_ACCOUNT_ROWS,
+            "profile_discovery_issues": list(discovery.get("profile_discovery_issues", [])),
             "more": "Use account=<exact ID> to inspect one account." if total > MAX_ACCOUNT_ROWS else None,
         },
         "workflows": {

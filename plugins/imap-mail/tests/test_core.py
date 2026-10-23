@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from imap_mail.core import DraftError, DraftService, digest, semantic
+from imap_mail import read_access
 
 
 class Server:
@@ -168,7 +169,7 @@ class DraftServiceTests(unittest.TestCase):
 
     def test_missing_configuration_reports_setup_needed(self):
         service = DraftService(config_path=self.root / "missing.json")
-        with patch("imap_mail.core.read_access.profiles", return_value={}):
+        with patch("imap_mail.core.read_access.profile_inventory", return_value=read_access.ProfileInventory({}, {}, ())):
             result = service.accounts()
         self.assertEqual(result["status"], "setup_needed")
         self.assertEqual(result["accounts"], [])

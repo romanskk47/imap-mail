@@ -13,6 +13,8 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from imap_mail import cli, mcp, send_setup
+from imap_mail.send import SendService
+from test_send import SendServer
 
 
 CANARY = "SYNTHETIC-AGENT-CONFIGURE-CREDENTIAL-NEVER-RETURN"
@@ -326,6 +328,90 @@ class AgentSendConfigureTests(unittest.TestCase):
         self.assertEqual(1, code)
         self.assertEqual("SMTP_CONNECTION_CHECK_FAILED", json.loads(output.getvalue())["error"]["code"])
         self.assertNotIn(CANARY, output.getvalue())
+        self.assertEqual(self.config, self.current())
+
+    def test_mcp_configures_injected_profile_without_profile_changes_or_mail_writes(self):
+        self.config.pop("profiles_dir")
+        self.write_json(self.config_path, self.config)
+        profile = {key: value for key, value in self.profile.items() if key != "password"}
+        profile["password_env"] = "SMTP_FIXTURE_PASSWORD"
+        injected = json.dumps([profile])
+        before = (self.profiles / "work.json").read_bytes()
+        server = SendServer()
+        checker = SendService(config_path=self.config_path, reader_factory=server.reader,
+                              smtp_factory=server.smtp).check_configuration
+        arguments = {"account": "work", "host": "smtp.example.test", "port": 465,
+                     "security": "ssl", "sent_copy": "server", "authorization": "enable_sending"}
+        with patch.dict(os.environ, {"MAIL_PROFILES_JSON": injected, "SMTP_FIXTURE_PASSWORD": "synthetic-password"}), \
+                patch.object(send_setup.SendSetupSession, "_default_check", side_effect=checker):
+            result = mcp.handle_request({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": "mail_send_configure", "arguments": arguments}},
+                service=SendService(config_path=self.config_path))["result"]
+            self.assertFalse(result["isError"], result)
+            self.assertEqual("saved", result["structuredContent"]["status"])
+            self.assertEqual(injected, os.environ["MAIL_PROFILES_JSON"])
+        self.assertEqual(before, (self.profiles / "work.json").read_bytes())
+        self.assertEqual(["login", "QUIT"], [row[0] for row in server.smtp_commands])
+        self.assertEqual(0, server.data_calls)
+        self.assertEqual(0, server.append_calls)
+        self.assertEqual(0o600, self.config_path.stat().st_mode & 0o777)
+        current = self.current()
+        self.assertTrue(current["accounts"]["work"]["send_enabled"])
+        self.assertEqual(self.config["accounts"]["unrelated"], current["accounts"]["unrelated"])
+        self.assertEqual(self.config["unknown_global_setting"], current["unknown_global_setting"])
+        self.assertNotIn("profiles_dir", current)
+
+    def test_cli_configures_exact_injected_account_while_foreign_profile_is_invalid(self):
+        self.config.pop("profiles_dir")
+        self.write_json(self.config_path, self.config)
+        foreign = {"id": "broken", "host": "imap.other.test", "entity": "Other"}
+        injected = json.dumps([self.profile, foreign])
+        before = (self.profiles / "work.json").read_bytes()
+        output = io.StringIO()
+        with patch.dict(os.environ, {"MAIL_PROFILES_JSON": injected}), \
+                patch.object(send_setup.SendSetupSession, "_default_check", side_effect=self.checker), \
+                contextlib.redirect_stdout(output):
+            result = cli.main(["--config", str(self.config_path), "send-configure", "work",
+                "--host", "smtp.example.test", "--port", "465", "--security", "ssl",
+                "--sent-copy", "server", "--authorization", "enable_sending"])
+        self.assertEqual(0, result)
+        self.assertEqual("saved", json.loads(output.getvalue())["status"])
+        self.assertEqual(["work"], [account for account, _ in self.calls])
+        self.assertEqual(before, (self.profiles / "work.json").read_bytes())
+        self.assertNotIn(CANARY, output.getvalue())
+
+    def test_injected_profile_change_during_check_rejects_save(self):
+        self.config.pop("profiles_dir")
+        self.write_json(self.config_path, self.config)
+
+        def change_profile(account, smtp):
+            os.environ["MAIL_PROFILES_JSON"] = json.dumps([{**self.profile, "password": "changed synthetic credential"}])
+            return self.checker(account, smtp)
+
+        with patch.dict(os.environ, {"MAIL_PROFILES_JSON": json.dumps([self.profile])}):
+            self.error("SETUP_CONFIGURATION_CHANGED", lambda: self.configure(checker=change_profile))
+        self.assertEqual(self.config, self.current())
+
+    def test_injected_duplicate_or_unidentifiable_profile_never_reaches_checker(self):
+        self.config.pop("profiles_dir")
+        self.write_json(self.config_path, self.config)
+        cases = ((json.dumps([self.profile, self.profile]), "DUPLICATE_ACCOUNT_ID"),
+                 (json.dumps([self.profile, {"host": "unknown.example.test"}]), "PROFILE_DISCOVERY_INCOMPLETE"))
+        for injected, code in cases:
+            with self.subTest(code=code), patch.dict(os.environ, {"MAIL_PROFILES_JSON": injected}):
+                self.error(code, self.configure)
+        self.assertEqual([], self.calls)
+        self.assertEqual(self.config, self.current())
+
+    def test_injected_setup_preserves_broker_and_private_settings_guards(self):
+        self.config.pop("profiles_dir")
+        self.write_json(self.config_path, self.config)
+        with patch.dict(os.environ, {"MAIL_PROFILES_JSON": json.dumps([self.profile]), "MAIL_BROKER_CONFIG": "synthetic-broker"}):
+            self.error("BROKER_SETUP_NOT_SUPPORTED", self.configure)
+        with patch.dict(os.environ, {"MAIL_PROFILES_JSON": json.dumps([self.profile])}):
+            self.config_path.chmod(0o644)
+            self.error("PRIVATE_FILE_PERMISSIONS_REQUIRE_600", self.configure)
+        self.assertEqual([], self.calls)
         self.assertEqual(self.config, self.current())
 
 
