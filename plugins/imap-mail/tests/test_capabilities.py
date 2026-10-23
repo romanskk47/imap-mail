@@ -142,8 +142,8 @@ class CapabilitiesTests(unittest.TestCase):
         self.assertIn("not a forbidden", result["unknown_or_missing_operation"]["meaning"])
         transports = result["transports"]
         self.assertEqual(["local_mcp_stdio", "local_cli"], transports["implemented"])
-        self.assertEqual("not_implemented", transports["authenticated_remote_mcp"])
-        self.assertEqual("not_implemented", transports["cloud_connector"])
+        self.assertEqual("optional_bridge_requires_separate_deployment", transports["authenticated_remote_mcp"])
+        self.assertEqual("not_provisioned_by_plugin", transports["cloud_connector"])
 
     def test_no_accounts_and_bounded_default_inventory(self):
         empty = capabilities(FakeService([]))

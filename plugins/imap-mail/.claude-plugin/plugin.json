@@ -1,10 +1,19 @@
 {
   "name": "imap-mail",
-  "version": "0.7.0",
-  "description": "AI email tools independent of desktop mail apps: read, draft, edit, mark messages and explicitly send. Capability discovery and compact verified workflows.",
-  "author": {"name": "Piotr Romański"},
+  "version": "0.7.1",
+  "description": "Manage email through IMAP and opt-in SMTP with one agent workflow: search, read, draft, edit, mark and send on request.",
+  "author": {
+    "name": "Piotr Romański"
+  },
   "repository": "https://github.com/romanskk47/imap-mail",
   "homepage": "https://github.com/romanskk47/imap-mail",
   "license": "MIT",
-  "keywords": ["email", "imap", "smtp", "drafts", "reply", "signatures"]
+  "keywords": [
+    "email",
+    "imap",
+    "smtp",
+    "drafts",
+    "reply",
+    "signatures"
+  ]
 }

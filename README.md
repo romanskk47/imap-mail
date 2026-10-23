@@ -1,75 +1,61 @@
 # IMAP Mail
 
-Connect an AI agent directly to your existing email account through IMAP and SMTP. Search and read mail, prepare or edit drafts, send a specific message when requested, and change read/star status without automating Apple Mail or another desktop mail client.
+One plugin and one `mail` skill for email in Codex and Claude Code. Search and read through IMAP, compose or edit drafts, change read/star status, and send requested messages through opt-in SMTP. It runs directly on a configured Mac, Linux host or cloud runtime.
 
-The agent does the technical work. Your request determines the action: a wording question stays a preview, a draft request stays unsent, and an explicit send request submits the reviewed message. Installing the plugin does not grant access to anyone else's mailbox or enable account permissions.
+Version **0.7.1** combines capability discovery, operation-specific readiness, compact previews and reviewed flags with agent-led SMTP configuration. The package uses Python 3.10+ and the standard library. The optional HTTP bridge has separate dependencies and deployment.
 
-**Source status:** this branch prepares **0.7.0**. Capability discovery, operation-specific read checks, reviewed read/star changes and compact previews are new here; the published **0.6.0** release does not include them. Source changes and offline tests are not a release, live provider validation or an iPhone compatibility claim.
+## Install
 
-## What it can do today
-
-| Task | Current implementation |
-| --- | --- |
-| Discover accounts and available functions | Offline capability inventory and per-account configuration gaps; no login or permission changes |
-| Check access, list folders, search and read | Read-only IMAP, stable message references, full MIME and attachment hash verification up to 16 MiB |
-| Compose or reply | Reviewed draft or send preview; configured signature, chosen attachments and reply headers |
-| Edit an existing unsent draft | Exact text replacements; preserve signature, thread and files; verify replacement before retiring the pinned original |
-| Add or repair draft attachments | Add approved local files or promote document parts to ordinary attachments, preserving their bytes |
-| Mark selected messages read/unread or starred/unstarred | Reviewed, verified changes to `\Seen` and `\Flagged`; separately enabled per account |
-| Send a specified message or saved draft | Opt-in SMTP, frozen review, durable submission journal and separate Sent-copy verification |
-| Download files, forward, move/archive/trash, manage folders | Not implemented as dedicated tools yet |
-| Connect OAuth-only providers | Not implemented; current authentication is password/app-password over verified TLS |
-| Use from ordinary ChatGPT/Claude web or mobile chats | Not yet a hosted connector; current package is a local stdio MCP server and CLI |
-
-These are implementation states, not a whitelist of what an AI may help with. `mail_capabilities` gives the agent a cheap inventory, and account checks distinguish unsupported functions from missing configuration or a connection problem. Missing ordinary mail functions should be added to the plugin rather than described as restrictions imposed by IMAP or by the skill.
-
-## Give this to your agent
-
-> Install IMAP Mail from https://github.com/romanskk47/imap-mail in my Codex or Claude Code. Reuse an existing installation if present. Read the packaged setup instructions, discover available functions and accounts, and guide me through connecting my own authorized mailbox. Handle the technical setup; ask only for missing choices. Use private credential entry, never passwords in chat. Check the selected operation without creating or sending a test message.
-
-Po polsku:
-
-> Zainstaluj IMAP Mail z https://github.com/romanskk47/imap-mail w moim Codex albo Claude Code. Jeśli jest już zainstalowany, wykorzystaj obecną instalację. Przeczytaj instrukcję konfiguracji, sprawdź dostępne funkcje i konta, a następnie przeprowadź mnie przez podłączenie mojego uprawnionego konta. Sam zajmij się techniczną konfiguracją, pytaj tylko o brakujące wybory. Hasło wpiszę prywatnie, nie na czacie. Sprawdź dostęp dla wybranej czynności bez tworzenia ani wysyłania wiadomości testowej.
-
-## Installation reference for agents
-
-Inspect existing installations and use the client's plugin commands:
+Ask your agent to install IMAP Mail from this repository and reuse existing account access. It handles technical configuration and asks only for missing choices. Passwords belong in the host's private secret store, never chat.
 
 ```sh
+# Codex
 codex plugin marketplace add romanskk47/imap-mail
 codex plugin add imap-mail@imap-mail-plugins
-```
 
-```sh
+# Claude Code
 claude plugin marketplace add romanskk47/imap-mail
 claude plugin install imap-mail@imap-mail-plugins --scope user
 ```
 
-Reload the client or start a new session as needed, then follow the bundled [Setup workflow](plugins/imap-mail/skills/setup/SKILL.md). The public marketplace is `imap-mail-plugins`; no private marketplace is needed. GitHub publication does not mean official-directory approval.
+Reuse an existing installation instead of installing the same plugin from two marketplaces. Refresh the client/start a new session when needed. The single [mail workflow](plugins/imap-mail/skills/mail/SKILL.md) includes account setup as a reference; there is no separate setup skill to choose.
 
-## Independent of a mail app, not independent of a host
+## One code source, host-owned access
 
-The Python implementation already talks to mail servers directly. Apple Mail does not need to be installed or running. The same code can run on an authorized Mac or Linux host, but that host must own the credentials, configuration, signatures, approved attachment files and private operation journals.
+GitHub distributes code and instructions. Each runtime supplies its own authorized account profiles, settings, signatures, operation journal and network access. GitHub repository secrets and a laptop installation do not automatically become cloud-task secrets.
 
-The current package uses **stdio MCP or a JSON CLI**. Installing it on a laptop does not install a cloud connector or configure a VPS. A production remote service still needs authenticated remote MCP, per-user/account isolation, private credential provisioning, durable state and attachment upload/download handles instead of laptop-only paths. OAuth provider integration and remote setup are also separate work. See the [deployment boundary](plugins/imap-mail/README.md#local-host-and-cloud-deployment) before planning a hosted installation.
+The plugin discovers profiles from `MAIL_PROFILES_JSON`, `MAIL_PROFILES_DIR` or `~/.secrets/services/mail`; profile passwords can reference injected environment variables or private files. Settings use `MAIL_DRAFTS_CONFIG` or `~/.config/imap-mail/settings.json`. No secrets, signatures or correspondence belong in this repository.
 
-## Compatibility and verification
+Direct access requires the runtime to permit the provider's IMAP/SMTP ports. An HTTPS domain allowlist alone does not establish that access. The optional [authenticated HTTP bridge](bridge/README.md) can connect to a separately provisioned backend; installing this plugin does not deploy or activate it. Only a successful check from the actual runtime confirms connectivity.
 
-- Python **3.10+**, standard library only, **macOS or Linux**. Windows is not supported by the POSIX journal locking implementation.
-- Verified TLS for IMAP and optional SMTP. Provider and administrator authentication policies still apply.
-- New-account setup uses a private local form. Credentials are stored in a private **plaintext password file (0600)**, not encrypted Keychain storage; use revocable app passwords where available.
-- Draft editing needs `UIDPLUS`. New local attachments need an approved directory. Existing HTML/CID signatures can be configured privately; desktop signatures are not imported automatically.
-- Server MIME/hash verification proves the stored files and reviewed message, not every client's composer behavior. An iPhone Mail case can open the attachments in a sent message and webmail but fail to import them into a draft/forward composer. Its root cause and fix are not established; attachment normalization is not a proven cure.
-- SMTP acceptance, a verified Sent copy and delivery to the recipient are different outcomes. An uncertain submission is inspected through its existing journal, never blindly resubmitted.
+Mailroom or another automatic sorter remains an independent service with its own configuration, policy, schedule and state. This plugin installs no sorter, daemon or background scan.
 
-Offline tests use synthetic data and do not contact real mailboxes:
+## Implemented actions
+
+| Action | Behavior |
+| --- | --- |
+| Discover accounts/capabilities | Offline inventory; keeps account identity and readiness gaps explicit |
+| Read/search/list folders | IMAP PEEK, stable references, MIME and file hashes up to 16 MiB |
+| Compose/reply | Frozen preview, configured signature, To/Cc and selected attachments |
+| Edit drafts/files | Verify a replacement before retiring the pinned original; preserve unrelated content |
+| Mark read/star status | Reviewed changes to `\Seen` and `\Flagged`, enabled per account |
+| Configure SMTP | Reuse the exact account's credential after explicit setup authorization; no test mail |
+| Send | Explicit message request, frozen review, submission journal and separate Sent-copy verification |
+
+Forward, attachment download, move/archive/trash, folder management and OAuth provider authentication are not implemented as dedicated operations. `mail_capabilities` reports these gaps so the agent can explain the actual limitation when relevant.
+
+A wording request stays a preview; a draft stays unsent. Only the user's send instruction authorizes submitting that message. SMTP acceptance is not proof of delivery. Uncertain writes use their existing operation journal, never blind retries.
+
+See the [plugin guide](plugins/imap-mail/README.md) for private configuration, CLI and recovery. Windows is unsupported because journals use POSIX locking. Draft replacement requires UIDPLUS. New attachments must be in approved host-local directories. The optional new-account form stores a private plaintext password file (0600), not encrypted Keychain storage.
+
+## Verification
+
+Offline tests use synthetic mail and never contact real mailboxes:
 
 ```sh
 python3 -m unittest discover -s plugins/imap-mail/tests -v
 ```
 
-See the [plugin guide](plugins/imap-mail/README.md) for configuration and CLI contracts, and the [agent workflow](plugins/imap-mail/skills/mail-drafts/SKILL.md) for concise task routing and recovery recipes.
+The [bridge guide](bridge/README.md#synthetic-verification) covers its separate test environment. A passing suite or published version does not verify any user's account, cloud connection or mail-client display.
 
-## License
-
-[MIT](LICENSE). Only generic code, synthetic tests and documentation belong in this repository. Credentials, account profiles, signatures, operation journals and private correspondence stay outside Git.
+[MIT](LICENSE). Publication does not imply listing or approval in an official plugin directory.

@@ -65,6 +65,13 @@ def parser() -> argparse.ArgumentParser:
     edit_status.add_argument("preview_id")
     send_check = commands.add_parser("send-check", help="Check separately enabled SMTP without sending a message")
     send_check.add_argument("account")
+    configure = commands.add_parser("send-configure", help="Configure an authorized existing account; checks SMTP without sending or opening a browser")
+    configure.add_argument("account")
+    configure.add_argument("--host", required=True)
+    configure.add_argument("--port", type=int, required=True)
+    configure.add_argument("--security", choices=["ssl", "starttls"], required=True)
+    configure.add_argument("--sent-copy", choices=["server", "append"], required=True)
+    configure.add_argument("--authorization", choices=["enable_sending"], required=True)
     send_preview = commands.add_parser("send-preview", help="Freeze content for an explicit send request; does not send")
     send_preview.add_argument("--request", "--input", dest="request", required=True)
     send_preview.add_argument("--response-view", choices=["full", "compact"])
@@ -109,7 +116,7 @@ def request(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
              "read": "mail_read", "draft-apply": "mail_draft_apply", "draft-status": "mail_draft_status",
              "preview-read": "mail_preview_read",
              "draft-edit-apply": "mail_draft_edit_apply", "draft-edit-status": "mail_draft_edit_status",
-             "send-check": "mail_send_check", "send-apply": "mail_send_apply", "send-status": "mail_send_status",
+             "send-configure": "mail_send_configure", "send-check": "mail_send_check", "send-apply": "mail_send_apply", "send-status": "mail_send_status",
              "flags-apply": "mail_flags_apply", "flags-status": "mail_flags_status"}
     return names[command], {key: value for key, value in values.items() if value is not None}
 

@@ -6,7 +6,7 @@ Read this for a specific human-requested send or an unresolved submission. A dra
 
 Use `mail_send_check(account)` for the exact selected account. SMTP must be separately enabled there; draft readiness does not grant it. Setup does not send test email.
 
-For an SMTP gap, follow [private SMTP setup](../../setup/SKILL.md#optional-smtp-sending). Resolve provider-documented settings rather than guessing a host. The local form requires consent to the exact SMTP hostname, reuse of that account's credential and sending permission. Never place a password in chat or tool arguments. The current implementation supports authenticated password/app-password SMTP over verified implicit TLS or mandatory STARTTLS, not separate SMTP credentials, OAuth or plaintext SMTP.
+For an SMTP gap, follow [SMTP setup](setup.md#enable-smtp-on-an-existing-account). Resolve provider-documented settings rather than guessing a host. With explicit setup authorization, `mail_send_configure` reuses the exact account's credential and checks verified TLS/login and Sent before saving. The private form is optional. Never place a password in chat or tool arguments. The current implementation supports authenticated password/app-password SMTP over verified implicit TLS or mandatory STARTTLS, not separate SMTP credentials, OAuth or plaintext SMTP.
 
 ## Freeze the message actually requested
 

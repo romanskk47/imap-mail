@@ -1,20 +1,29 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "imap-mail",
-  "version": "0.7.0",
-  "description": "AI email tools independent of desktop mail apps: read, draft, edit, mark messages and explicitly send. Capability discovery and compact verified workflows.",
-  "author": {"name": "Piotr Romański"},
+  "version": "0.7.1",
+  "description": "Manage email through IMAP and opt-in SMTP with one agent workflow: search, read, draft, edit, mark and send on request.",
+  "author": {
+    "name": "Piotr Romański"
+  },
   "repository": "https://github.com/romanskk47/imap-mail",
   "homepage": "https://github.com/romanskk47/imap-mail",
   "license": "MIT",
-  "keywords": ["email", "imap", "smtp", "drafts", "reply", "signatures"],
+  "keywords": [
+    "email",
+    "imap",
+    "smtp",
+    "drafts",
+    "reply",
+    "signatures"
+  ],
   "extensions": {
     "com.openai": {
-      "onboardingSkill": "./skills/setup/SKILL.md",
+      "onboardingSkill": "./skills/mail/SKILL.md",
       "interface": {
         "displayName": "IMAP Mail",
-        "shortDescription": "Manage email through AI, independently of mail apps",
-        "longDescription": "Discover connected accounts and capabilities; search/read messages, prepare or edit drafts with signatures and attachments, mark read/unread or starred, and send when requested. Compact reviews preserve full message content and verification. Runs on a configured Mac or Linux host without a mail app. Authenticated cloud connection, folder moves and provider OAuth are not yet implemented."
+        "shortDescription": "Manage email with one IMAP/SMTP workflow",
+        "longDescription": "Search and read mail, prepare or edit drafts with signatures and attachments, mark read/unread or starred, and send when requested. One skill includes account setup. Each Mac, Linux or cloud runtime uses its authorized host-owned secrets and network access. Optional remote transport requires separate provisioning."
       }
     }
   }
