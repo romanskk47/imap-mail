@@ -1,0 +1,4 @@
+interface:
+  display_name: "IMAP Mail"
+  short_description: "Manage email through configured IMAP and SMTP"
+  default_prompt: "Use $mail to handle my email request on the correct configured account."

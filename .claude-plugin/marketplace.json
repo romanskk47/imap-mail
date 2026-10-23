@@ -1,12 +1,12 @@
 {
   "name": "imap-mail-plugins",
-  "description": "Local email reading, unsent draft creation/editing and explicitly authorized SMTP submissions for AI agents.",
+  "description": "Direct IMAP/SMTP email management for AI agents, independent of desktop mail apps.",
   "owner": {"name": "Piotr Romański"},
   "plugins": [
     {
       "name": "imap-mail",
       "source": "./plugins/imap-mail",
-      "description": "Read IMAP mail, create/edit verified drafts or explicitly send reviewed messages over opt-in SMTP."
+      "description": "Discover capabilities, search/read mail, create/edit drafts, mark read/star status and send when requested. Runs on a configured host; hosted cloud access is not included."
     }
   ]
 }

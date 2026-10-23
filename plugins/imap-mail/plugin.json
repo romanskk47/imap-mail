@@ -1,20 +1,29 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "imap-mail",
-  "version": "0.6.0",
-  "description": "Read IMAP mail, create or edit unsent drafts, or explicitly send reviewed messages over opt-in SMTP. Private signatures and attachments.",
-  "author": {"name": "Piotr Romański"},
+  "version": "0.7.1",
+  "description": "Manage email through IMAP and opt-in SMTP with one agent workflow: search, read, draft, edit, mark and send on request.",
+  "author": {
+    "name": "Piotr Romański"
+  },
   "repository": "https://github.com/romanskk47/imap-mail",
   "homepage": "https://github.com/romanskk47/imap-mail",
   "license": "MIT",
-  "keywords": ["email", "imap", "smtp", "drafts", "reply", "signatures"],
+  "keywords": [
+    "email",
+    "imap",
+    "smtp",
+    "drafts",
+    "reply",
+    "signatures"
+  ],
   "extensions": {
     "com.openai": {
-      "onboardingSkill": "./skills/setup/SKILL.md",
+      "onboardingSkill": "./skills/mail/SKILL.md",
       "interface": {
         "displayName": "IMAP Mail",
-        "shortDescription": "Read mail, create/edit drafts or explicitly send",
-        "longDescription": "Read IMAP mail, create or edit reviewed unsent drafts, or submit explicitly requested SMTP messages. Editing verifies a replacement before retiring only the exact original and keeps a private backup. Sending requires separate opt-in and a send-specific preview. Blocks blind uncertain retries. Credentials stay on the configured host. No generic deletion, OAuth, cloud hosting or background sorting."
+        "shortDescription": "Manage email with one IMAP/SMTP workflow",
+        "longDescription": "Search and read mail, prepare or edit drafts with signatures and attachments, mark read/unread or starred, and send when requested. One skill includes account setup. Each Mac, Linux or cloud runtime uses its authorized host-owned secrets and network access. Remote execution requires a separately configured launcher; no hosted HTTP connector is included."
       }
     }
   }

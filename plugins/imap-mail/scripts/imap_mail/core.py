@@ -432,18 +432,29 @@ class DraftService:
         return response
 
     @public
-    def check(self, account):
+    def check(self, account, operation="draft"):
         """Verify one configured account and draft setup, without mailbox writes.
 
         Readiness is based on TLS login, folder discovery and EXAMINE only. The
         server's permission to APPEND is confirmed only by an authorized draft.
         """
+        if operation not in ("read", "draft"):
+            raise DraftError("INVALID_CHECK_OPERATION")
         config = self._config()
         if not isinstance(account, str) or account not in config["accounts"]:
             raise DraftError("ACCOUNT_NOT_CONFIGURED")
         result = {"account": account, "status": "needs_attention", "connection": False,
                   "mailbox_writes": 0}
         try:
+            if operation == "read":
+                _, profile = self._account(config, account)
+                result["identity"] = profile_identity(profile)
+                with self._reader(profile) as reader:
+                    validity, _ = reader.select("INBOX")
+                result.update(status="ready", connection=True, operation="read",
+                              read_ready=True, mailbox="INBOX", uidvalidity=validity,
+                              issues=[])
+                return result
             entry, profile = self._account(config, account, write=True)
             result["identity"] = profile_identity(profile)
             try:
@@ -467,6 +478,28 @@ class DraftService:
                 code = "CONNECTION_CHECK_FAILED"
             result.update(error_code=code, issues=[code])
         return result
+
+    @public
+    def preview_read(self, preview_id):
+        """Read the same integrity-checked preview, never prepare or apply one."""
+        config = self._config()
+        with self._lock(config) as root:
+            _, record, _ = self._load(root, preview_id)
+            operation = record["immutable"].get("operation", "draft")
+            if operation == "send":
+                self._send_prebound(config, record)
+            elif operation == "draft_edit":
+                # Include the original MIME integrity check, not just the new MIME.
+                self._edit_load(root, preview_id)
+                self._bound(config, record)
+            elif operation == "draft":
+                self._bound(config, record)
+            else:
+                raise DraftError("PREVIEW_OPERATION_MISMATCH")
+            return {"status": record["state"], "preview_id": preview_id,
+                    "preview_hash": record["preview_hash"],
+                    **record["immutable"]["review"],
+                    "mailbox_writes": 0, "smtp_submissions": 0}
 
     @public
     def folders(self, account):
@@ -691,7 +724,10 @@ class DraftService:
         if quoted:
             signed_plain += "\n\n" + "\n".join("> " + line for line in quoted.splitlines())
             signed_html += '<blockquote style="white-space:pre-wrap">' + html.escape(quoted) + "</blockquote>"
-        message = EmailMessage(policy=policy.SMTP)
+        # RFC 2045 limits quoted-printable body lines to 76 characters, not
+        # SMTP policy's default 78. This is standards compliance, not an
+        # assertion that it resolves a particular native-client defect.
+        message = EmailMessage(policy=policy.SMTP.clone(max_line_length=76))
         message["From"] = selected_from
         message["To"] = ", ".join(a["formatted"] for a in recipients)
         if copies:
