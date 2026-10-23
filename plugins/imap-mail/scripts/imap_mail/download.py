@@ -31,6 +31,30 @@ class MimeRead:
     def attachment_manifest_complete(self):
         return not self.unsupported_parts
 
+    def body_part(self, subtype):
+        unsupported = {item["part_index"] for item in self.unsupported_parts}
+        excluded = {id(part) for index, part in enumerate(self.message.walk()) if index in unsupported}
+
+        def find(part):
+            if id(part) in excluded or part.is_attachment():
+                return None
+            if part.get_content_type() == "text/" + subtype:
+                return part
+            if part.get_content_maintype() != "multipart":
+                return None
+            children = list(part.iter_parts())
+            if part.get_content_subtype() == "related" and children:
+                start = part.get_param("start")
+                root = next((child for child in children if start and child["Content-ID"] == start), children[0])
+                children = [root]
+            for child in children:
+                candidate = find(child)
+                if candidate is not None:
+                    return candidate
+            return None
+
+        return find(self.message)
+
 
 def parse_mime(raw):
     """Validate complete MIME and distinguish exportable leaves from opaque containers."""

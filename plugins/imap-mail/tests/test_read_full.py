@@ -262,6 +262,41 @@ class FullReadTests(unittest.TestCase):
         self.save(raw.replace(b"SGVsbG8=", b"SGVsbG8"))
         self.error("MALFORMED_MESSAGE_MIME", self.read)
 
+    def test_opaque_inline_or_named_container_cannot_replace_parent_body(self):
+        for disposition in (None, "inline"):
+            for parent_kind in ("html", "alternative", "related"):
+                with self.subTest(disposition=disposition, parent_kind=parent_kind):
+                    if parent_kind == "html":
+                        message = self.message()
+                        message.set_content("<p>Actual parent body</p>", subtype="html")
+                    elif parent_kind == "alternative":
+                        message = self.message(plain="Actual parent plain", html="<p>Actual parent rich</p>")
+                    else:
+                        message = self.message(plain="Unselected related resource")
+                        message.make_related()
+                        message.get_payload()[0]["Content-ID"] = "<resource@example.test>"
+                        message.add_related("<p>Actual related root</p>", subtype="html", cid="<root@example.test>")
+                        message.set_param("start", "<root@example.test>")
+                    message.make_mixed()
+                    nested = self.message(plain="Nested attachment must stay separate", html="<p>Nested rich body</p>")
+                    if disposition is None:
+                        nested.set_param("name", "attached.mime")
+                    else:
+                        nested["Content-Disposition"] = 'inline; filename="attached.mime"'
+                    message.attach(nested)
+                    raw = self.save(message)
+                    result = self.read()
+                    expected = {"html": "Actual parent body", "alternative": "Actual parent plain\n",
+                                "related": "Actual related root"}[parent_kind]
+                    self.assertEqual(result["body"], expected)
+                    self.assertEqual(result["body_type"], "text/plain" if parent_kind == "alternative" else "text/html")
+                    self.assertEqual(result["content_sha256"], digest(raw))
+                    self.assertEqual(self.server.messages["Drafts"]["13"], raw)
+                    self.assertFalse(result["attachment_manifest_complete"])
+                    index = next(i for i, part in enumerate(message.walk()) if part is nested)
+                    self.assertEqual(result["unsupported_parts"], [{"part_index": index, "filename": "attached.mime",
+                        "type": "multipart/alternative", "reason": "UNSUPPORTED_ATTACHMENT_CONTAINER"}])
+
     def test_empty_mime_is_rejected(self):
         self.save(b"")
         self.error("MALFORMED_MESSAGE_MIME", self.read)

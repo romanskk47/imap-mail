@@ -102,7 +102,7 @@ class SendService(DraftService):
             message, files = mime.message, mime.attachments
             body, body_type = "", None
             for subtype in ("plain", "html"):
-                part = message.get_body(preferencelist=(subtype,))
+                part = mime.body_part(subtype)
                 if part is None:
                     continue
                 candidate = part.get_content()
