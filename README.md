@@ -2,7 +2,7 @@
 
 One plugin and one `mail` skill for email in Codex and Claude Code. Search and read through IMAP, compose or edit drafts, change read/star status, and send requested messages through opt-in SMTP. It runs directly on a configured Mac, Linux host or cloud runtime.
 
-Version **0.7.1** combines capability discovery, operation-specific readiness, compact previews and reviewed flags with agent-led SMTP configuration. The package uses Python 3.10+ and the standard library. The optional HTTP bridge has separate dependencies and deployment.
+Version **0.7.1** combines capability discovery, operation-specific readiness, compact previews and reviewed flags with agent-led SMTP configuration. The package uses Python 3.10+ and the standard library.
 
 ## Install
 
@@ -26,7 +26,7 @@ GitHub distributes code and instructions. Each runtime supplies its own authoriz
 
 The plugin discovers profiles from `MAIL_PROFILES_JSON`, `MAIL_PROFILES_DIR` or `~/.secrets/services/mail`; profile passwords can reference injected environment variables or private files. Settings use `MAIL_DRAFTS_CONFIG` or `~/.config/imap-mail/settings.json`. No secrets, signatures or correspondence belong in this repository.
 
-Direct access requires the runtime to permit the provider's IMAP/SMTP ports. An HTTPS domain allowlist alone does not establish that access. The optional [authenticated HTTP bridge](bridge/README.md) can connect to a separately provisioned backend; installing this plugin does not deploy or activate it. Only a successful check from the actual runtime confirms connectivity.
+Direct access requires the runtime to permit the provider's IMAP/SMTP ports. An HTTPS domain allowlist alone does not establish that access. A configured SSH/stdio launcher can run the same plugin on an authorized host. This release provides no hosted HTTP connector. Only a successful check from the actual runtime confirms connectivity.
 
 Mailroom or another automatic sorter remains an independent service with its own configuration, policy, schedule and state. This plugin installs no sorter, daemon or background scan.
 
@@ -56,6 +56,6 @@ Offline tests use synthetic mail and never contact real mailboxes:
 python3 -m unittest discover -s plugins/imap-mail/tests -v
 ```
 
-The [bridge guide](bridge/README.md#synthetic-verification) covers its separate test environment. A passing suite or published version does not verify any user's account, cloud connection or mail-client display.
+A passing suite or published version does not verify any user's account, cloud connection or mail-client display.
 
 [MIT](LICENSE). Publication does not imply listing or approval in an official plugin directory.

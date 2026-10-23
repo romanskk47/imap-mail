@@ -23,7 +23,7 @@
       "interface": {
         "displayName": "IMAP Mail",
         "shortDescription": "Manage email with one IMAP/SMTP workflow",
-        "longDescription": "Search and read mail, prepare or edit drafts with signatures and attachments, mark read/unread or starred, and send when requested. One skill includes account setup. Each Mac, Linux or cloud runtime uses its authorized host-owned secrets and network access. Optional remote transport requires separate provisioning."
+        "longDescription": "Search and read mail, prepare or edit drafts with signatures and attachments, mark read/unread or starred, and send when requested. One skill includes account setup. Each Mac, Linux or cloud runtime uses its authorized host-owned secrets and network access. Remote execution requires a separately configured launcher; no hosted HTTP connector is included."
       }
     }
   }

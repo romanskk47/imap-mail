@@ -58,9 +58,9 @@ def capabilities(service, account=None):
         "smtp_submissions": 0,
         "transports": {
             "implemented": ["local_mcp_stdio", "local_cli"],
-            "authenticated_remote_mcp": "optional_bridge_requires_separate_deployment",
-            "cloud_connector": "not_provisioned_by_plugin",
-            "private_host": "Runs on the configured host with its own secrets and network permissions. The optional server bridge is separate; this inventory does not verify any remote deployment or client connection.",
+            "authenticated_remote_mcp": "not_implemented",
+            "cloud_connector": "not_implemented",
+            "private_host": "Runs on the configured host with its own secrets and network permissions. An SSH/stdio launcher can be configured separately; this inventory does not verify remote deployment or client connectivity.",
         },
         "implemented": {
             "account_discovery": ["mail_accounts"],

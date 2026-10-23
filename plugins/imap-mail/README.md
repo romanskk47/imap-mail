@@ -197,7 +197,7 @@ Readiness creates no test messages. Live write tests need exact authorization. R
 
 The packaged MCP server uses stdio on its configured host. Direct cloud access needs host-owned profiles/settings and provider-port network access; an HTTPS allowlist alone is insufficient. GitHub installation does not transfer secrets or establish another runtime's access.
 
-An optional [authenticated HTTP bridge](https://github.com/romanskk47/imap-mail/tree/main/bridge) is separate server code with its own dependencies, private configuration and durable backend. Installing the plugin does not deploy, activate or verify it. Do not enable both local and remote toolsets for the same runtime. Verify from that actual runtime before claiming cloud connectivity.
+A configured SSH/stdio launcher can execute the same plugin on an authorized host while keeping secrets and journals there. This release provides no hosted HTTP connector. Installing the plugin does not configure a remote launcher or verify another runtime's connection. Use one backend per runtime and verify from that actual runtime before claiming cloud connectivity.
 
 Automatic sorting belongs to Mailroom or another independent project. This plugin does not install its schedules or share its processing journal.
 
