@@ -18,6 +18,11 @@ import ssl
 import subprocess
 import sys
 
+if __package__:
+    from .fetch_response import FetchError, fetch_records, requested_fetch
+else:
+    from fetch_response import FetchError, fetch_records, requested_fetch
+
 MAX_BYTES = 2097152
 HEADERS = ('From', 'To', 'Subject', 'Date', 'Message-ID', 'In-Reply-To',
            'References', 'List-ID', 'List-Unsubscribe', 'Auto-Submitted',
@@ -217,19 +222,22 @@ class Reader:
         item='BODY.PEEK[HEADER.FIELDS ('+' '.join(h.upper() for h in HEADERS)+')]<0.32768>'
         status,items=self.client.uid('FETCH',','.join(expected),f'(UID FLAGS INTERNALDATE {item})')
         if status!='OK':raise MailError('FETCH_FAILED')
+        try:
+            records = fetch_records(items)
+            bodies = [record for record in records if record.literal is not None]
+            if any(record.uid not in expected for record in bodies):
+                raise FetchError()
+            selected = [requested_fetch(records, uid, 'HEADER.FIELDS ('+' '.join(h.upper() for h in HEADERS)+')', 0)
+                        for uid in expected]
+        except FetchError as exc:
+            raise MailError(exc.code) from None
         rows={}
-        for literal in items:
-            if not isinstance(literal,tuple):continue
-            prefix,raw=literal
-            match=re.search(rb'\bUID (\d+)\b',prefix)
-            uid=match[1].decode() if match else None
-            if uid not in expected or uid in rows or not raw:raise MailError('FETCH_IDENTITY_MISMATCH')
+        for record in selected:
+            uid, raw = record.uid, record.literal
+            if not raw:raise MailError('FETCH_IDENTITY_MISMATCH')
             msg=email.message_from_bytes(raw,policy=email.policy.default)
-            flags=re.search(rb'FLAGS \(([^)]*)\)',prefix)
-            internal=re.search(rb'INTERNALDATE "([^"]+)"',prefix)
             rows[uid]={'uid':uid,**{h:str(msg.get(h,''))[:4000] for h in HEADERS},
-                'flags':flags[1].decode('ascii',errors='replace').split() if flags else [],
-                'internal_date':internal[1].decode('ascii') if internal else None}
+                'flags':list(record.flags or ()), 'internal_date':record.internal_date}
         if set(rows)!=set(expected):raise MailError('MESSAGE_UNAVAILABLE')
         return [rows[uid] for uid in expected]
 
@@ -240,19 +248,21 @@ class Reader:
         status, items = self.client.uid('FETCH', str(uid), f'(UID RFC822.SIZE FLAGS INTERNALDATE {item})')
         if status != 'OK':
             raise MailError('FETCH_FAILED')
-        literals = [x for x in items if isinstance(x, tuple)]
-        if len(literals) != 1 or not literals[0][1]:
-            raise MailError('MESSAGE_UNAVAILABLE')
-        prefix, raw = literals[0]
-        match = re.search(rb'\bUID (\d+)\b', prefix)
-        if not match or int(match[1]) != int(uid):
-            raise MailError('FETCH_IDENTITY_MISMATCH')
+        try:
+            records = fetch_records(items)
+            if len([record for record in records if record.literal is not None]) != 1:
+                raise FetchError('MESSAGE_UNAVAILABLE')
+            section = 'HEADER.FIELDS ('+' '.join(h.upper() for h in HEADERS)+')' if headers_only else ''
+            record = requested_fetch(records, uid, section, 0)
+            raw = record.literal
+            if not raw:
+                raise FetchError('MESSAGE_UNAVAILABLE')
+        except FetchError as exc:
+            raise MailError(exc.code) from None
         msg = email.message_from_bytes(raw, policy=email.policy.default)
         result = {'uid':str(uid), **{h:str(msg.get(h, ''))[:4000] for h in HEADERS}}
-        flags = re.search(rb'FLAGS \(([^)]*)\)', prefix)
-        result['flags'] = flags[1].decode('ascii', errors='replace').split() if flags else []
-        internal = re.search(rb'INTERNALDATE "([^"]+)"', prefix)
-        result['internal_date'] = internal[1].decode('ascii') if internal else None
+        result['flags'] = list(record.flags or ())
+        result['internal_date'] = record.internal_date
         if not headers_only:
             part = msg.get_body(preferencelist=('plain','html')) if msg.is_multipart() else msg
             body = part.get_content() if part and part.get_content_maintype()=='text' else ''
@@ -262,16 +272,16 @@ class Reader:
                 body = re.sub(r'(?is)<(script|style)\b[^>]*>.*?</\1>', '', body)
                 body = html.unescape(re.sub(r'<[^>]*>', ' ', body))
                 body = re.sub(r'\s+', ' ', body).strip()
-            size = re.search(rb'RFC822.SIZE (\d+)', prefix)
             truncated = len(raw)>=MAX_BYTES
             # Some servers report a stale stored RFC822.SIZE after MIME conversion.
             # Verify EOF with a one-byte PEEK instead of treating every such mail as cut off.
-            if size and int(size[1])>len(raw) and not truncated:
+            if record.size is not None and record.size != len(raw) and not truncated:
                 probe_status, probe = self.client.uid('FETCH',str(uid),f'(UID BODY.PEEK[]<{len(raw)}.1>)')
-                confirmed_empty = probe_status=='OK' and any(
-                    (isinstance(x,tuple) and x[1]==b'' and re.search(rb'\bUID '+str(uid).encode()+rb'\b',x[0])) or
-                    (isinstance(x,bytes) and re.search(rb'\bUID '+str(uid).encode()+rb'\b',x) and b'BODY[]<' in x and b'""' in x)
-                    for x in probe)
+                try:
+                    probes = fetch_records(probe if probe_status == 'OK' else [])
+                    confirmed_empty = len(probes) == 1 and requested_fetch(probes, uid, '', len(raw)).literal == b''
+                except FetchError:
+                    confirmed_empty = False
                 truncated = not confirmed_empty
             result.update(body=body[:60000], truncated=truncated or len(body)>60000,
                           content_sha256=hashlib.sha256(raw).hexdigest(),

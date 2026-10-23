@@ -84,11 +84,13 @@ class FakeReader:
             flags = b"\\Draft" if self.mailbox == "Drafts" else b"\\Seen"
             if self.mailbox == "Drafts" and self.server.draft_marked_deleted:
                 flags += b" \\Deleted"
-            prefix = f"1 (UID {uid} RFC822.SIZE {len(raw)} FLAGS (".encode() + flags + b") BODY[] {" + str(len(raw)).encode() + b"}"
+            size = len(raw)
             partial = re.search(r"<(\d+)\.(\d+)>", str(args[-1]))
             if partial:
                 offset, maximum = map(int, partial.groups())
                 raw = raw[offset:offset + maximum]
+            body_offset = f"<{partial[1]}>" if partial else ""
+            prefix = f"1 (UID {uid} RFC822.SIZE {size} FLAGS (".encode() + flags + f") BODY[]{body_offset} {{{len(raw)}}}".encode()
             return "OK", [(prefix, raw), b")"]
         raise AssertionError(f"Unexpected mutating or unbounded command: {command}")
 

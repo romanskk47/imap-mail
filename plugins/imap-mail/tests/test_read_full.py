@@ -209,11 +209,17 @@ class FullReadTests(unittest.TestCase):
         self.save(raw.replace(b"SGVsbG8=", b"SGVsbG8"))
         self.error("MALFORMED_MESSAGE_MIME", self.read)
 
-    def test_attached_eml_container_is_not_silently_omitted_from_complete_manifest(self):
+    def test_attached_eml_keeps_parent_readable_and_manifest_explicit(self):
         message = self.message()
         message.add_attachment(self.message(plain="Attached message body"), filename="forwarded.eml")
         self.save(message)
-        self.error("UNSUPPORTED_MESSAGE_MIME", self.read)
+        result = self.read()
+        self.assertEqual(result["body"], "Read-only message\n")
+        self.assertTrue(result["mime_complete"])
+        self.assertFalse(result["attachment_manifest_complete"])
+        self.assertEqual(result["attachment_details"], [])
+        self.assertEqual(result["unsupported_parts"], [{"part_index": 2, "filename": "forwarded.eml",
+            "type": "message/rfc822", "reason": "UNSUPPORTED_ATTACHMENT_CONTAINER"}])
 
     def test_multipart_attachment_container_is_not_silently_omitted(self):
         container = self.message(html="<p>Attached rich message</p>")
@@ -222,7 +228,39 @@ class FullReadTests(unittest.TestCase):
         message.make_mixed()
         message.attach(container)
         self.save(message)
-        self.error("UNSUPPORTED_MESSAGE_MIME", self.read)
+        result = self.read()
+        self.assertEqual(result["body"], "Read-only message\n")
+        self.assertFalse(result["attachment_manifest_complete"])
+        self.assertEqual(result["unsupported_parts"][0]["filename"], "multipart.mime")
+        self.assertEqual(result["attachment_details"], [])
+
+    def test_delivery_status_keeps_explanation_readable_with_opaque_report(self):
+        raw = (b"From: postmaster@example.test\r\nTo: owner@example.test\r\n"
+               b"Subject: Delivery failure\r\nMIME-Version: 1.0\r\n"
+               b'Content-Type: multipart/report; report-type=delivery-status; boundary="dsn"\r\n\r\n'
+               b"--dsn\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n"
+               b"Your message could not be delivered.\r\n"
+               b"--dsn\r\nContent-Type: message/delivery-status\r\n\r\n"
+               b"Reporting-MTA: dns; mail.example.test\r\n\r\n"
+               b"Final-Recipient: rfc822; unavailable@example.test\r\n"
+               b"Action: failed\r\nStatus: 5.1.1\r\n\r\n--dsn--\r\n")
+        self.save(raw)
+        result = self.read()
+        self.assertEqual(result["body"], "Your message could not be delivered.")
+        self.assertEqual(result["content_sha256"], digest(raw))
+        self.assertTrue(result["mime_complete"])
+        self.assertFalse(result["attachment_manifest_complete"])
+        self.assertEqual(result["attachment_details"], [])
+        self.assertEqual(result["unsupported_parts"], [{"part_index": 2, "filename": None,
+            "type": "message/delivery-status", "reason": "UNSUPPORTED_ATTACHMENT_CONTAINER"}])
+
+    def test_opaque_container_descendants_remain_validated(self):
+        message = self.message()
+        message.add_attachment(self.message(files=[("bad.bin", b"Hello")]), filename="forwarded.eml")
+        raw = message.as_bytes()
+        self.assertIn(b"SGVsbG8=", raw)
+        self.save(raw.replace(b"SGVsbG8=", b"SGVsbG8"))
+        self.error("MALFORMED_MESSAGE_MIME", self.read)
 
     def test_empty_mime_is_rejected(self):
         self.save(b"")

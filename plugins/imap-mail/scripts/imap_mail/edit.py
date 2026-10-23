@@ -361,6 +361,7 @@ class EditService(SendService):
             source = record["immutable"]["draft_source"]
             self._prevent_source_replay(root, source, preview_id, source["message_id"])
             if not record["append_attempted"]:
+                semantic(raw)
                 with self._reader(profile) as reader:
                     folder, _ = self._edit_folder(reader, entry, record)
                     self._edit_capabilities(reader)

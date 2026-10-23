@@ -77,7 +77,12 @@ class FakeReader:
             if raw is None:
                 return "OK", []
             flags = "\\Draft" if self.mailbox == "Drafts" and self.server.draft_flag else ""
-            return "OK", [(f"1 (UID {uid} RFC822.SIZE {len(raw)} FLAGS ({flags})".encode(), raw), b")"]
+            partial = re.search(r"<([0-9]+)\.([0-9]+)>", args[-1])
+            offset = f"<{partial[1]}>" if partial else ""
+            size = len(raw)
+            if partial:
+                raw = raw[int(partial[1]):int(partial[1]) + int(partial[2])]
+            return "OK", [(f"1 (UID {uid} RFC822.SIZE {size} FLAGS ({flags}) BODY[]{offset} {{{len(raw)}}}".encode(), raw), b")"]
         raise AssertionError("Unexpected command: " + command)
 
     def append(self, mailbox, flags, date, raw):

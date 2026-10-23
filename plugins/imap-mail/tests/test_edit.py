@@ -610,7 +610,8 @@ class EditTests(unittest.TestCase):
         for flag in ("\\*", 'quote"', "unsafe;flag", "name[bracket"):
             with self.subTest(flag=flag):
                 source = self.draft(flags=["\\Draft", flag])
-                self.error("UNSUPPORTED_DRAFT_FLAGS", lambda: self.preview(source))
+                code = "FETCH_IDENTITY_MISMATCH" if flag == 'quote"' else "UNSUPPORTED_DRAFT_FLAGS"
+                self.error(code, lambda: self.preview(source))
         self.assertEqual(self.server.append_calls, 0)
 
     def test_server_only_recent_flag_is_not_copied_to_replacement(self):
