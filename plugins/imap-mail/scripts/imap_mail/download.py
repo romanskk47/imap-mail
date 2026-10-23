@@ -1,6 +1,7 @@
 """Original MIME attachment export to private, host-owned plugin state only."""
 
 from contextlib import contextmanager
+from dataclasses import dataclass
 import email
 from email import policy
 import os
@@ -19,25 +20,65 @@ SUFFIXES = {"application/pdf": ".pdf", "text/csv": ".csv", "image/png": ".png",
             "image/jpeg": ".jpg", "text/plain": ".txt"}
 
 
+@dataclass(frozen=True)
+class MimeRead:
+    message: email.message.EmailMessage
+    attachments: tuple
+    payloads: dict
+    unsupported_parts: tuple
+
+    @property
+    def attachment_manifest_complete(self):
+        return not self.unsupported_parts
+
+    def body_part(self, subtype):
+        unsupported = {item["part_index"] for item in self.unsupported_parts}
+        excluded = {id(part) for index, part in enumerate(self.message.walk()) if index in unsupported}
+
+        def find(part):
+            if id(part) in excluded or part.is_attachment():
+                return None
+            if part.get_content_type() == "text/" + subtype:
+                return part
+            if part.get_content_maintype() != "multipart":
+                return None
+            children = list(part.iter_parts())
+            if part.get_content_subtype() == "related" and children:
+                start = part.get_param("start")
+                root = next((child for child in children if start and child["Content-ID"] == start), children[0])
+                children = [root]
+            for child in children:
+                candidate = find(child)
+                if candidate is not None:
+                    return candidate
+            return None
+
+        return find(self.message)
+
+
 def parse_mime(raw):
-    """Validate every MIME leaf before publishing a complete part/hash manifest."""
+    """Validate complete MIME and distinguish exportable leaves from opaque containers."""
     try:
         if not raw.strip():
             raise ValueError("Empty MIME")
         message = email.message_from_bytes(raw, policy=policy.default)
-        files, payloads = [], {}
+        files, payloads, unsupported, opaque = [], {}, [], set()
         for index, part in enumerate(message.walk()):
             for name in ("Content-Type", "Content-Disposition", "Content-Transfer-Encoding"):
-                if len(part.get_all(name, [])) > 1:
+                values = part.get_all(name, [])
+                if len(values) > 1 or any(getattr(value, "defects", ()) for value in values):
                     raise ValueError("Ambiguous MIME header")
             encoding = str(part.get("Content-Transfer-Encoding", "7bit")).strip().lower()
             if encoding not in {"7bit", "8bit", "binary", "base64", "quoted-printable"}:
                 raise ValueError("Unsupported MIME encoding")
             if part.is_multipart():
-                if (part.get_content_maintype() == "message" or
+                if id(part) not in opaque and (part.get_content_maintype() == "message" or
                         part.get_content_disposition() == "attachment" or
                         part.get_filename() is not None):
-                    raise DraftError("UNSUPPORTED_MESSAGE_MIME")
+                    unsupported.append({"part_index": index, "filename": part.get_filename(),
+                                        "type": part.get_content_type(),
+                                        "reason": "UNSUPPORTED_ATTACHMENT_CONTAINER"})
+                    opaque.update(id(child) for child in part.walk())
                 continue
             # Decode all leaves: Python discovers some base64 defects only here.
             payload = part.get_payload(decode=True)
@@ -45,7 +86,7 @@ def parse_mime(raw):
                 raise ValueError("Undecodable MIME payload")
             disposition, filename = part.get_content_disposition(), part.get_filename()
             cid = str(part.get("Content-ID", ""))
-            if (disposition == "attachment" or filename is not None or cid or
+            if id(part) not in opaque and (disposition == "attachment" or filename is not None or cid or
                     part.get_content_maintype() != "text"):
                 files.append({"part_index": index, "filename": filename,
                               "type": part.get_content_type(), "disposition": disposition,
@@ -53,7 +94,7 @@ def parse_mime(raw):
                 payloads[index] = payload
         if any(part.defects for part in message.walk()):
             raise ValueError("Defective MIME")
-        return message, files, payloads
+        return MimeRead(message, tuple(files), payloads, tuple(unsupported))
     except DraftError:
         raise
     except Exception:
@@ -158,13 +199,15 @@ def attachment_save(service, account, message, part_index, expected_sha256):
         raw, _ = service._full_raw(reader, message["mailbox"], message["uidvalidity"], message["uid"])
     if digest(raw) != message["content_sha256"]:
         raise DraftError("MESSAGE_CONTENT_CHANGED")
-    _, details, payloads = parse_mime(raw)
-    detail = next((item for item in details if item["part_index"] == part_index), None)
+    mime = parse_mime(raw)
+    if any(item["part_index"] == part_index for item in mime.unsupported_parts):
+        raise DraftError("UNSUPPORTED_ATTACHMENT_CONTAINER")
+    detail = next((item for item in mime.attachments if item["part_index"] == part_index), None)
     if detail is None:
         raise DraftError("ATTACHMENT_PART_UNAVAILABLE")
     if detail["sha256"] != expected_sha256:
         raise DraftError("ATTACHMENT_HASH_MISMATCH")
-    payload = payloads[part_index]
+    payload = mime.payloads[part_index]
     if len(payload) > MAX_ATTACHMENT:
         raise DraftError("ATTACHMENT_TOO_LARGE")
     state = service._resolve(service.state_override or config.get("state_dir") or "~/.local/state/imap-mail")

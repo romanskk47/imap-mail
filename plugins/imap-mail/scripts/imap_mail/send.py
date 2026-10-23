@@ -19,6 +19,7 @@ import tempfile
 import uuid
 
 from . import read_access
+from .fetch_response import FetchError, fetch_records, requested_fetch
 from .download import attachment_save, parse_mime
 from .core import (DraftError, DraftService, MESSAGE_ID, MAX_RAW, MAX_BODY, STABLE_ID,
                    addresses, bare_address, digest, header, profile_identity,
@@ -97,10 +98,11 @@ class SendService(DraftService):
         with self._reader(profile) as reader:
             raw, flags = self._full_raw(reader, mailbox, uidvalidity, uid)
         try:
-            message, files, _ = parse_mime(raw)
+            mime = parse_mime(raw)
+            message, files = mime.message, mime.attachments
             body, body_type = "", None
             for subtype in ("plain", "html"):
-                part = message.get_body(preferencelist=(subtype,))
+                part = mime.body_part(subtype)
                 if part is None:
                     continue
                 candidate = part.get_content()
@@ -128,7 +130,9 @@ class SendService(DraftService):
                 "truncated": len(body) > READ_BODY_LIMIT,
                 "raw_bytes": len(raw), "content_sha256": digest(raw), "mime_complete": True,
                 "attachments": [item["filename"] for item in files],
-                "attachment_details": files, "attachment_manifest_complete": True,
+                "attachment_details": list(files),
+                "attachment_manifest_complete": mime.attachment_manifest_complete,
+                "unsupported_parts": list(mime.unsupported_parts),
                 "attachments_read": False, "contentTrust": "untrusted email"}
 
     def attachment_save(self, account, message, part_index, expected_sha256):
@@ -291,44 +295,32 @@ class SendService(DraftService):
     def _fetch_full_raw(self, reader, uid):
         """Fetch from the already selected mailbox without changing its mode."""
         status, rows = reader.client.uid("FETCH", str(uid), "(UID RFC822.SIZE FLAGS BODY.PEEK[])")
-        literals = [row for row in rows if isinstance(row, tuple)] if status == "OK" else []
-        if len(literals) != 1:
-            raise DraftError("MESSAGE_UNAVAILABLE")
-        prefix, raw = literals[0]
-        match = re.search(rb"\bUID (\d+)\b", prefix)
-        size = re.search(rb"RFC822.SIZE (\d+)", prefix)
-        flags = re.search(rb"FLAGS \(([^)]*)\)", prefix)
-        if not match or match[1].decode() != str(uid) or not size or flags is None:
+        try:
+            records = fetch_records(rows if status == "OK" else [])
+            if len([record for record in records if record.literal is not None]) != 1:
+                raise FetchError("MESSAGE_UNAVAILABLE")
+            record = requested_fetch(records, uid, "")
+        except FetchError as exc:
+            raise DraftError(exc.code) from None
+        raw = record.literal
+        if record.size is None or record.flags is None:
             raise DraftError("FETCH_IDENTITY_MISMATCH")
-        literal = re.search(rb"\bBODY\[\]\s+\{([0-9]+)\}\s*$", prefix, re.IGNORECASE)
-        if (not isinstance(raw, bytes) or len(raw) > MAX_RAW or not literal or
-                int(literal[1]) != len(raw)):
+        if len(raw) > MAX_RAW:
             raise DraftError("MESSAGE_TOO_LARGE_OR_INCOMPLETE")
-        if int(size[1]) != len(raw):
+        if record.size != len(raw):
             # Known providers retain pre-conversion RFC822.SIZE. A full FETCH
             # still declares the received literal size; independently prove EOF
             # rather than silently trusting either size or a truncated literal.
             status, probe_rows = reader.client.uid("FETCH", str(uid),
                 f"(UID BODY.PEEK[]<{len(raw)}.1>)")
-            candidates = []
-            for row in probe_rows:
-                uid_pattern = rb"\bUID " + str(uid).encode() + rb"\b"
-                body_pattern = rb"\bBODY\[\]<" + str(len(raw)).encode() + rb">"
-                if isinstance(row, tuple) and len(row) == 2:
-                    valid = (row[1] == b"" and re.search(uid_pattern, row[0]) and
-                             re.search(body_pattern + rb"\s+\{0\}\s*$", row[0], re.IGNORECASE))
-                    candidates.append(bool(valid))
-                elif isinstance(row, bytes) and re.fullmatch(rb"\s*\)*\s*", row):
-                    continue
-                elif isinstance(row, bytes):
-                    valid = (re.search(uid_pattern, row) and
-                             re.search(body_pattern + rb'\s+""\s*\)*\s*$', row, re.IGNORECASE))
-                    candidates.append(bool(valid))
-                else:
-                    candidates.append(False)
-            if status != "OK" or candidates != [True]:
+            try:
+                probes = fetch_records(probe_rows if status == "OK" else [])
+                empty = len(probes) == 1 and requested_fetch(probes, uid, "", len(raw)).literal == b""
+            except FetchError:
+                empty = False
+            if not empty:
                 raise DraftError("MESSAGE_TOO_LARGE_OR_INCOMPLETE")
-        return raw, flags[1].decode("ascii").split()
+        return raw, list(record.flags)
 
     def _existing_mime(self, raw, entry):
         message = email.message_from_bytes(raw, policy=policy.default)
@@ -697,6 +689,7 @@ class SendService(DraftService):
                 return self._send_result(record)
             self._prevent_source_replay(root, record["immutable"].get("draft_source"), preview_id,
                                         record["immutable"]["review"]["message_id"])
+            semantic(raw)
             sender, recipients = self._envelope(record, raw)
             with self._reader(profile) as reader:
                 self._verify_sources(reader, entry, record)

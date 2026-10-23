@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "imap-mail",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "Manage email through IMAP and opt-in SMTP with one agent workflow: search, read, save attachments, draft, edit, mark and send on request.",
   "author": {
     "name": "Piotr Romański"

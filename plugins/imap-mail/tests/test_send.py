@@ -39,7 +39,7 @@ class SendReader(FakeReader):
         if command == "FETCH" and args[-1].endswith("BODY.PEEK[])") and result[1]:
             status, rows = result
             prefix, raw = rows[0]
-            prefix += f" {self.server.full_body_marker} {{{len(raw)}}}".encode()
+            prefix = prefix.replace(b"BODY[]", self.server.full_body_marker.encode())
             if self.server.stale_full_size:
                 prefix = prefix.replace(f"RFC822.SIZE {len(raw)}".encode(), b"RFC822.SIZE 1")
             if self.server.short_full_fetch:

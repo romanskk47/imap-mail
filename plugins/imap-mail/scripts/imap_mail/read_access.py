@@ -3,6 +3,7 @@
 import argparse
 import base64
 import datetime as dt
+from dataclasses import dataclass, field
 import email
 import email.policy
 import html
@@ -18,7 +19,13 @@ import ssl
 import subprocess
 import sys
 
+if __package__:
+    from .fetch_response import FetchError, fetch_records, requested_fetch
+else:
+    from fetch_response import FetchError, fetch_records, requested_fetch
+
 MAX_BYTES = 2097152
+MAX_PROFILE_BYTES = 1024 * 1024
 HEADERS = ('From', 'To', 'Subject', 'Date', 'Message-ID', 'In-Reply-To',
            'References', 'List-ID', 'List-Unsubscribe', 'Auto-Submitted',
            'Authentication-Results', 'Reply-To', 'Return-Path')
@@ -41,34 +48,95 @@ def private_file(path):
     return p
 
 
-def profiles(directory=None):
-    if directory is None and os.environ.get('MAIL_PROFILES_JSON'):
-        raw = json.loads(os.environ['MAIL_PROFILES_JSON'])
-        docs = raw if isinstance(raw, list) else [raw]
+@dataclass(frozen=True)
+class ProfileInventory:
+    valid: dict[str, dict] = field(repr=False)
+    invalid: dict[str, tuple[str, ...]]
+    discovery_errors: tuple[str, ...]
+
+    def require(self, account: str) -> dict:
+        if self.discovery_errors:
+            raise MailError('PROFILE_DISCOVERY_INCOMPLETE')
+        if account in self.invalid:
+            raise MailError(self.invalid[account][0])
+        if account not in self.valid:
+            raise MailError('ACCOUNT_PROFILE_UNAVAILABLE')
+        return self.valid[account]
+
+
+def _profile_json(value):
+    def unique_pairs(pairs):
+        result = {}
+        for key, item in pairs:
+            if key in result:
+                raise ValueError('Duplicate profile field')
+            result[key] = item
+        return result
+
+    return json.loads(value, object_pairs_hook=unique_pairs)
+
+
+def profile_directory(directory=None):
+    if directory is None and 'MAIL_PROFILES_JSON' in os.environ:
+        return None
+    return Path(directory or os.environ.get('MAIL_PROFILES_DIR', '~/.secrets/services/mail')).expanduser()
+
+
+def profile_inventory(directory=None) -> ProfileInventory:
+    documents, discovery_errors = [], []
+    root = profile_directory(directory)
+    if root is None:
+        try:
+            raw = _profile_json(os.environ['MAIL_PROFILES_JSON'])
+            documents = [(doc, None) for doc in (raw if isinstance(raw, list) else [raw])]
+        except (ValueError, UnicodeError):
+            discovery_errors.append('INVALID_PROFILE_JSON')
     else:
-        root = Path(directory or os.environ.get('MAIL_PROFILES_DIR', '~/.secrets/services/mail')).expanduser()
-        docs = []
-        for path in sorted(root.rglob('*.json')):
-            d = json.loads(path.read_text())
-            if 'password' in d:
+        try:
+            if root.exists() and not root.is_dir():
+                raise OSError('Profile source is not a directory')
+            for path in sorted(root.rglob('*.json')):
+                try:
+                    with path.open('rb') as stream:
+                        data = stream.read(MAX_PROFILE_BYTES + 1)
+                    if len(data) > MAX_PROFILE_BYTES:
+                        discovery_errors.append('PROFILE_FILE_TOO_LARGE')
+                        continue
+                    documents.append((_profile_json(data.decode('utf-8')), path))
+                except (ValueError, UnicodeError):
+                    discovery_errors.append('INVALID_PROFILE_JSON')
+                except OSError:
+                    discovery_errors.append('PROFILE_READ_FAILED')
+        except OSError:
+            discovery_errors.append('PROFILE_DIRECTORY_UNAVAILABLE')
+    valid, invalid = {}, {}
+    for document, path in documents:
+        account = document.get('id') if isinstance(document, dict) else None
+        if not isinstance(account, str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,80}', account):
+            discovery_errors.append('INVALID_ACCOUNT_ID')
+            continue
+        if account in valid or account in invalid:
+            valid.pop(account, None)
+            invalid[account] = ('DUPLICATE_ACCOUNT_ID',)
+            continue
+        try:
+            if path is not None and 'password' in document:
                 private_file(path)
-            docs.append(d)
-    out = {}
-    for d in docs:
-        for field in ('id', 'host', 'user', 'entity'):
-            if not d.get(field):
-                raise MailError('INCOMPLETE_PROFILE')
-            safe_text(d[field])
-        if not re.fullmatch(r'[a-zA-Z0-9_-]{1,80}', d['id']):
-            raise MailError('INVALID_ACCOUNT_ID')
-        if d['id'] in out:
-            raise MailError('DUPLICATE_ACCOUNT_ID')
-        if d.get('tls', True) is not True:
-            raise MailError('TLS_REQUIRED')
-        if not isinstance(d.get('port', 993), int) or not 1 <= d.get('port', 993) <= 65535:
-            raise MailError('INVALID_PORT')
-        out[d['id']] = d
-    return out
+            for name in ('host', 'user', 'entity'):
+                if not document.get(name):
+                    raise MailError('INCOMPLETE_PROFILE')
+                safe_text(document[name])
+            if document.get('tls', True) is not True:
+                raise MailError('TLS_REQUIRED')
+            if type(document.get('port', 993)) is not int or not 1 <= document.get('port', 993) <= 65535:
+                raise MailError('INVALID_PORT')
+        except MailError as exc:
+            invalid[account] = (str(exc),)
+        except OSError:
+            invalid[account] = ('PROFILE_READ_FAILED',)
+        else:
+            valid[account] = document
+    return ProfileInventory(valid, invalid, tuple(discovery_errors))
 
 
 def identity(d):
@@ -217,19 +285,22 @@ class Reader:
         item='BODY.PEEK[HEADER.FIELDS ('+' '.join(h.upper() for h in HEADERS)+')]<0.32768>'
         status,items=self.client.uid('FETCH',','.join(expected),f'(UID FLAGS INTERNALDATE {item})')
         if status!='OK':raise MailError('FETCH_FAILED')
+        try:
+            records = fetch_records(items)
+            bodies = [record for record in records if record.literal is not None]
+            if any(record.uid not in expected for record in bodies):
+                raise FetchError()
+            selected = [requested_fetch(records, uid, 'HEADER.FIELDS ('+' '.join(h.upper() for h in HEADERS)+')', 0)
+                        for uid in expected]
+        except FetchError as exc:
+            raise MailError(exc.code) from None
         rows={}
-        for literal in items:
-            if not isinstance(literal,tuple):continue
-            prefix,raw=literal
-            match=re.search(rb'\bUID (\d+)\b',prefix)
-            uid=match[1].decode() if match else None
-            if uid not in expected or uid in rows or not raw:raise MailError('FETCH_IDENTITY_MISMATCH')
+        for record in selected:
+            uid, raw = record.uid, record.literal
+            if not raw:raise MailError('FETCH_IDENTITY_MISMATCH')
             msg=email.message_from_bytes(raw,policy=email.policy.default)
-            flags=re.search(rb'FLAGS \(([^)]*)\)',prefix)
-            internal=re.search(rb'INTERNALDATE "([^"]+)"',prefix)
             rows[uid]={'uid':uid,**{h:str(msg.get(h,''))[:4000] for h in HEADERS},
-                'flags':flags[1].decode('ascii',errors='replace').split() if flags else [],
-                'internal_date':internal[1].decode('ascii') if internal else None}
+                'flags':list(record.flags or ()), 'internal_date':record.internal_date}
         if set(rows)!=set(expected):raise MailError('MESSAGE_UNAVAILABLE')
         return [rows[uid] for uid in expected]
 
@@ -240,19 +311,21 @@ class Reader:
         status, items = self.client.uid('FETCH', str(uid), f'(UID RFC822.SIZE FLAGS INTERNALDATE {item})')
         if status != 'OK':
             raise MailError('FETCH_FAILED')
-        literals = [x for x in items if isinstance(x, tuple)]
-        if len(literals) != 1 or not literals[0][1]:
-            raise MailError('MESSAGE_UNAVAILABLE')
-        prefix, raw = literals[0]
-        match = re.search(rb'\bUID (\d+)\b', prefix)
-        if not match or int(match[1]) != int(uid):
-            raise MailError('FETCH_IDENTITY_MISMATCH')
+        try:
+            records = fetch_records(items)
+            if len([record for record in records if record.literal is not None]) != 1:
+                raise FetchError('MESSAGE_UNAVAILABLE')
+            section = 'HEADER.FIELDS ('+' '.join(h.upper() for h in HEADERS)+')' if headers_only else ''
+            record = requested_fetch(records, uid, section, 0)
+            raw = record.literal
+            if not raw:
+                raise FetchError('MESSAGE_UNAVAILABLE')
+        except FetchError as exc:
+            raise MailError(exc.code) from None
         msg = email.message_from_bytes(raw, policy=email.policy.default)
         result = {'uid':str(uid), **{h:str(msg.get(h, ''))[:4000] for h in HEADERS}}
-        flags = re.search(rb'FLAGS \(([^)]*)\)', prefix)
-        result['flags'] = flags[1].decode('ascii', errors='replace').split() if flags else []
-        internal = re.search(rb'INTERNALDATE "([^"]+)"', prefix)
-        result['internal_date'] = internal[1].decode('ascii') if internal else None
+        result['flags'] = list(record.flags or ())
+        result['internal_date'] = record.internal_date
         if not headers_only:
             part = msg.get_body(preferencelist=('plain','html')) if msg.is_multipart() else msg
             body = part.get_content() if part and part.get_content_maintype()=='text' else ''
@@ -262,16 +335,16 @@ class Reader:
                 body = re.sub(r'(?is)<(script|style)\b[^>]*>.*?</\1>', '', body)
                 body = html.unescape(re.sub(r'<[^>]*>', ' ', body))
                 body = re.sub(r'\s+', ' ', body).strip()
-            size = re.search(rb'RFC822.SIZE (\d+)', prefix)
             truncated = len(raw)>=MAX_BYTES
             # Some servers report a stale stored RFC822.SIZE after MIME conversion.
             # Verify EOF with a one-byte PEEK instead of treating every such mail as cut off.
-            if size and int(size[1])>len(raw) and not truncated:
+            if record.size is not None and record.size != len(raw) and not truncated:
                 probe_status, probe = self.client.uid('FETCH',str(uid),f'(UID BODY.PEEK[]<{len(raw)}.1>)')
-                confirmed_empty = probe_status=='OK' and any(
-                    (isinstance(x,tuple) and x[1]==b'' and re.search(rb'\bUID '+str(uid).encode()+rb'\b',x[0])) or
-                    (isinstance(x,bytes) and re.search(rb'\bUID '+str(uid).encode()+rb'\b',x) and b'BODY[]<' in x and b'""' in x)
-                    for x in probe)
+                try:
+                    probes = fetch_records(probe if probe_status == 'OK' else [])
+                    confirmed_empty = len(probes) == 1 and requested_fetch(probes, uid, '', len(raw)).literal == b''
+                except FetchError:
+                    confirmed_empty = False
                 truncated = not confirmed_empty
             result.update(body=body[:60000], truncated=truncated or len(body)>60000,
                           content_sha256=hashlib.sha256(raw).hexdigest(),
@@ -344,12 +417,12 @@ def run(args):
         if call_args.get('limit',0)>limit_max:
             raise MailError('BROKER_LIMIT_EXCEEDED')
         return broker_call(cfg,name,call_args)
-    docs = profiles(args.profiles_dir)
+    inventory = profile_inventory(args.profiles_dir)
     if args.command == 'accounts':
-        return [identity(d) for d in docs.values()]
-    if args.account not in docs:
-        raise MailError('ACCOUNT_UNAVAILABLE')
-    d = docs[args.account]
+        if inventory.invalid or inventory.discovery_errors:
+            raise MailError('PROFILE_DISCOVERY_INCOMPLETE')
+        return [identity(d) for d in inventory.valid.values()]
+    d = inventory.require(args.account)
     reader = Reader(d)
     try:
         if args.command == 'status':

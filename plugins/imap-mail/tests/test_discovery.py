@@ -1,7 +1,10 @@
 """Offline discovery and one-account readiness checks with synthetic profiles."""
 
 import copy
+import contextlib
+import io
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -10,6 +13,8 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from imap_mail.core import DraftError, DraftService
+from imap_mail import cli, mcp, read_access
+from imap_mail.flags import FlagService
 from test_core import Server
 
 
@@ -71,9 +76,23 @@ class AccountDiscoveryTests(unittest.TestCase):
         self.assertNotIn("SYNTHETIC_UNUSED", json.dumps(response))
         self.assertFalse((self.root / "state").exists())
 
+    def test_oversized_profile_is_bounded_before_parsing_and_has_no_inferred_id(self):
+        oversized = self.root / "oversized"
+        oversized.mkdir(mode=0o700)
+        path = oversized / "account-1.json"
+        self.write_json(path, {**self.profiles["account-1"], "metadata": "x" * read_access.MAX_PROFILE_BYTES})
+        with patch.object(read_access, "_profile_json", side_effect=AssertionError("Too large to parse")) as parse:
+            inventory = read_access.profile_inventory(oversized)
+        self.assertEqual(0, parse.call_count)
+        self.assertEqual({}, inventory.valid)
+        self.assertEqual({}, inventory.invalid)
+        self.assertEqual(("PROFILE_FILE_TOO_LARGE",), inventory.discovery_errors)
+        with self.assertRaisesRegex(read_access.MailError, "^PROFILE_DISCOVERY_INCOMPLETE$"):
+            inventory.require("account-1")
+
     def test_missing_configuration_still_discovers_profiles_without_enabling_writes(self):
         service = DraftService(config_path=self.root / "absent.json", reader_factory=self.server.reader)
-        with patch("imap_mail.core.read_access.profiles", return_value=self.profiles):
+        with patch("imap_mail.core.read_access.profile_inventory", return_value=read_access.ProfileInventory(self.profiles, {}, ())):
             response = service.accounts()
         self.assertEqual(response["status"], "setup_needed")
         self.assertEqual(response["configured_accounts"], 0)
@@ -201,6 +220,151 @@ class AccountDiscoveryTests(unittest.TestCase):
         self.assertEqual(result["error_code"], "CONNECTION_CHECK_FAILED")
         self.assertFalse(result["connection"])
         self.assertNotIn("private server response", json.dumps(result))
+
+    def test_foreign_incomplete_profile_is_isolated_in_cli_and_exact_mcp_check(self):
+        broken = {**self.profiles["account-2"]}
+        del broken["user"]
+        self.write_json(self.profiles_dir / "account-2.json", broken)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            exit_code = cli.main(["accounts"], service=self.service)
+        self.assertEqual(0, exit_code)
+        result = json.loads(output.getvalue())
+        rows = self.rows(result)
+        self.assertEqual(7, result["discovered_accounts"])
+        self.assertEqual("needs_attention", result["status"])
+        self.assertEqual(["INCOMPLETE_PROFILE"], rows["account-2"]["issues"])
+        self.assertFalse(rows["account-2"]["read_ready"])
+        self.assertTrue(rows["account-1"]["read_ready"])
+        checked = mcp.handle_request({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": "mail_check", "arguments": {"account": "account-1", "operation": "read"}}},
+            service=self.service)["result"]
+        self.assertFalse(checked["isError"])
+        self.assertEqual("ready", checked["structuredContent"]["status"])
+        self.assertEqual(["account-1"], self.connected)
+        self.assertEqual(0, self.server.append_calls)
+
+    def test_foreign_invalid_injected_profile_keeps_exact_valid_account_usable(self):
+        broken = {**self.profiles["account-2"], "tls": False}
+        self.config.pop("profiles_dir")
+        self.save_config()
+        with patch.dict(os.environ, {"MAIL_PROFILES_JSON": json.dumps([self.profiles["account-1"], broken])}):
+            rows = self.rows(self.service.accounts())
+            self.assertTrue(rows["account-1"]["read_ready"])
+            self.assertEqual(["TLS_REQUIRED"], rows["account-2"]["issues"])
+            self.assertEqual("ready", self.service.check("account-1", operation="read")["status"])
+            self.assertEqual("TLS_REQUIRED", self.service.check("account-2", operation="read")["error_code"])
+        self.assertEqual(["account-1"], self.connected)
+
+    def test_unidentifiable_profile_reports_global_issue_and_blocks_resolution(self):
+        (self.profiles_dir / "broken.json").write_text('{"private": "SYNTHETIC-UNPRINTABLE', encoding="utf-8")
+        result = self.service.accounts()
+        self.assertEqual("needs_attention", result["status"])
+        self.assertEqual(["INVALID_PROFILE_JSON"], result["profile_discovery_issues"])
+        self.assertEqual(7, len(result["accounts"]))
+        self.assertTrue(all(not row["read_ready"] for row in result["accounts"]))
+        self.assertEqual("PROFILE_DISCOVERY_INCOMPLETE", self.service.check("account-1", operation="read")["error_code"])
+        self.assertNotIn("SYNTHETIC-UNPRINTABLE", json.dumps(result))
+        self.assertEqual([], self.connected)
+
+    def test_duplicate_ids_block_only_that_identity_for_both_document_orders(self):
+        self.config.pop("profiles_dir")
+        self.save_config()
+        valid = self.profiles["account-2"]
+        invalid = {**valid, "tls": False}
+        for duplicates in ([valid, invalid], [invalid, valid], [valid, valid], [valid, invalid, valid]):
+            with self.subTest(duplicates=duplicates), patch.dict(os.environ, {
+                    "MAIL_PROFILES_JSON": json.dumps([self.profiles["account-1"], *duplicates])}):
+                rows = self.rows(self.service.accounts())
+                self.assertEqual(["DUPLICATE_ACCOUNT_ID"], rows["account-2"]["issues"])
+                self.assertFalse(rows["account-2"]["read_ready"])
+                self.assertTrue(rows["account-1"]["read_ready"])
+                self.assertEqual("DUPLICATE_ACCOUNT_ID", self.service.check("account-2", operation="read")["error_code"])
+        self.assertEqual([], self.connected)
+
+    def test_insecure_selected_profile_has_a_local_issue_without_secret_output(self):
+        profile = {**self.profiles["account-2"], "password": "SYNTHETIC-DO-NOT-RETURN"}
+        profile.pop("password_env")
+        path = self.profiles_dir / "account-2.json"
+        self.write_json(path, profile)
+        path.chmod(0o644)
+        result = self.service.accounts()
+        rows = self.rows(result)
+        self.assertEqual(["SECRET_FILE_PERMISSIONS_REQUIRE_600"], rows["account-2"]["issues"])
+        self.assertTrue(rows["account-1"]["read_ready"])
+        self.assertEqual("SECRET_FILE_PERMISSIONS_REQUIRE_600", self.service.check("account-2", operation="read")["error_code"])
+        self.assertNotIn("SYNTHETIC-DO-NOT-RETURN", json.dumps(result))
+        self.assertEqual([], self.connected)
+
+    def test_ambiguous_json_id_cannot_select_a_valid_candidate(self):
+        path = self.profiles_dir / "ambiguous.json"
+        path.write_text('{"id":"account-1","id":"other","user":"SYNTHETIC-PRIVATE"}', encoding="utf-8")
+        result = self.service.accounts()
+        self.assertEqual(["INVALID_PROFILE_JSON"], result["profile_discovery_issues"])
+        self.assertEqual("PROFILE_DISCOVERY_INCOMPLETE", self.service.check("account-1", operation="read")["error_code"])
+        self.assertNotIn("SYNTHETIC-PRIVATE", json.dumps(result))
+        self.assertEqual([], self.connected)
+
+    def test_empty_or_unidentifiable_injected_data_never_falls_back_to_files(self):
+        self.config.pop("profiles_dir")
+        self.save_config()
+        for injected, code in (("", "INVALID_PROFILE_JSON"), ("null", "INVALID_ACCOUNT_ID"),
+                               ('[{"user":"SYNTHETIC-PRIVATE"}]', "INVALID_ACCOUNT_ID")):
+            with self.subTest(injected=injected), patch.dict(os.environ, {
+                    "MAIL_PROFILES_JSON": injected, "MAIL_PROFILES_DIR": str(self.profiles_dir)}):
+                result = self.service.accounts()
+                self.assertEqual(0, result["discovered_accounts"])
+                self.assertEqual([code], result["profile_discovery_issues"])
+                self.assertEqual("PROFILE_DISCOVERY_INCOMPLETE", self.service.check("account-1", operation="read")["error_code"])
+                self.assertNotIn("SYNTHETIC-PRIVATE", json.dumps(result))
+        self.assertEqual([], self.connected)
+
+    def test_explicit_profile_directory_remains_the_selected_source(self):
+        with patch.dict(os.environ, {"MAIL_PROFILES_JSON": "invalid injected source"}):
+            result = self.service.accounts()
+            self.assertEqual("ready", result["status"])
+            self.assertEqual([], result["profile_discovery_issues"])
+            self.assertEqual(7, result["discovered_accounts"])
+            self.assertEqual("ready", self.service.check("account-1", operation="read")["status"])
+        self.assertEqual(["account-1"], self.connected)
+
+    def test_full_service_discovery_preserves_smtp_and_flags_isolation(self):
+        for account in ("account-1", "account-2"):
+            self.config["accounts"][account].update(flags_write=True, send_enabled=True,
+                smtp={"host": "smtp.example.test", "port": 465, "security": "ssl",
+                      "use_imap_credentials": True, "sent_copy": "server"})
+        self.save_config()
+        self.write_json(self.profiles_dir / "account-2.json", {**self.profiles["account-2"], "tls": False})
+        service = FlagService(config_path=self.config_path, reader_factory=self.server.reader)
+        result = mcp.dispatch_tool("mail_accounts", {}, service=service)
+        rows = self.rows(result)
+        self.assertTrue(rows["account-1"]["read_ready"])
+        self.assertTrue(rows["account-1"]["send_ready"])
+        self.assertTrue(rows["account-1"]["flags_enabled"])
+        self.assertFalse(rows["account-2"]["read_ready"])
+        self.assertFalse(rows["account-2"]["send_ready"])
+        self.assertFalse(rows["account-2"]["flags_enabled"])
+        self.assertEqual(["TLS_REQUIRED"], rows["account-2"]["send_issues"])
+        self.assertEqual(["TLS_REQUIRED"], rows["account-2"]["flags_issues"])
+        self.assertEqual(0, self.server.connections)
+
+    def test_capabilities_exposes_global_discovery_error_without_raw_profile(self):
+        (self.profiles_dir / "broken.json").write_text("SYNTHETIC-PRIVATE", encoding="utf-8")
+        result = mcp.dispatch_tool("mail_capabilities", {"account": "account-1"}, service=self.service)
+        configuration = result["local_configuration"]
+        self.assertEqual(["INVALID_PROFILE_JSON"], configuration["profile_discovery_issues"])
+        self.assertFalse(configuration["accounts"][0]["read_ready"])
+        self.assertEqual(["PROFILE_DISCOVERY_INCOMPLETE"], configuration["accounts"][0]["issues"])
+        self.assertNotIn("SYNTHETIC-PRIVATE", json.dumps(result))
+        self.assertEqual([], self.connected)
+
+    def test_unconfigured_invalid_id_remains_visible_with_its_own_issue(self):
+        broken = {"id": "unconfigured-broken", "host": "imap.example.test", "entity": "other"}
+        self.write_json(self.profiles_dir / "unconfigured.json", broken)
+        rows = self.rows(self.service.accounts())
+        self.assertFalse(rows["unconfigured-broken"]["configured"])
+        self.assertEqual(["INCOMPLETE_PROFILE"], rows["unconfigured-broken"]["issues"])
+        self.assertTrue(rows["account-1"]["read_ready"])
 
 
 if __name__ == "__main__":

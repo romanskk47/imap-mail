@@ -1,4 +1,4 @@
-# IMAP Mail 0.7.2
+# IMAP Mail 0.7.3
 
 Agent-operated email for Codex and Claude Code: read IMAP mail, create/edit drafts, change read/star status, or send a specifically requested message over opt-in SMTP. One `mail` skill includes setup and recovery. Python 3.10+, standard library only; no Apple Mail, paid API, daemon or VPS required.
 
@@ -27,6 +27,8 @@ Supported: macOS/Linux with TLS access to the provider. Windows lacks supported 
 Settings: `MAIL_DRAFTS_CONFIG` or `~/.config/imap-mail/settings.json`. State: `MAIL_DRAFTS_STATE_DIR`, configured `state_dir`, or `~/.local/state/imap-mail`. CLI overrides: `--config` / `--state-dir`. Keep private files outside Git, directories private, credentials/config mode 0600.
 
 Profiles require `id`, `host`, `user`, `entity`, TLS, and exactly one of `password`, `password_env`, `password_file`. Default: `~/.secrets/services/mail`; overrides: `MAIL_PROFILES_DIR` / `MAIL_PROFILES_JSON`. Never expose secrets in chat/arguments/logs. OAuth and bypassing a broker's write policy are unsupported.
+
+A configured `profiles_dir` selects that directory. Otherwise `MAIL_PROFILES_JSON` selects injected profiles, followed by `MAIL_PROFILES_DIR` or the default directory. Invalid injected JSON never falls back to files. Profile files are limited to 1 MiB. Discovery reports invalid profiles by their exact ID. An invalid foreign ID does not disable a valid account; duplicate IDs remain blocked. Documents without a trustworthy ID appear in `profile_discovery_issues` and block account access until the ambiguity is resolved. Diagnostics contain fixed codes, not profile contents.
 
 Minimal private draft settings, with placeholder values:
 
@@ -78,6 +80,8 @@ mail_send_configure(account, host, port, security, sent_copy,
 
 This reuses only the pinned account's credential, checks verified TLS/login and existing Sent, then saves atomically. No MAIL/RCPT/DATA or test email. The marker is not proof of consent, nor permission for any message.
 
+Existing profiles may come from files or `MAIL_PROFILES_JSON`. SMTP configuration changes only private account settings and preserves the profile source. File-backed setup checks the private profile directory, rejects symlink paths, and enforces the file size limit before reading profiles, before the connection check, and again before saving. The new-account form still requires a file-backed profile store because it creates credentials and profiles.
+
 Resolve settings from trusted provider documentation/current authorized settings, not the email domain alone. `security`: `ssl` or mandatory verified `starttls` before login. `sent_copy: "server"` means the provider saves sent mail; otherwise `"append"` makes one verified copy. Do not guess and duplicate it. Sent must exist; `sent_mailbox` pins a verified override.
 
 Recheck with `mail_send_check`. `mail_send_setup` remains an optional form. Neither changes IMAP identity or copies another account's secret. Separate SMTP credentials/plaintext SMTP/OAuth are unsupported.
@@ -121,7 +125,7 @@ Copy all four fields unchanged into `reply` / `draft`; top-level account must ma
 
 A new message supplies `to` / `subject`; a reply supplies `reply`. Optional: `from_address`, `cc`, `reply_all`, `attachments`. `body_text` is new text only. Cc is Polish DW. Reply addresses the sender; Reply-All retains others excluding this account's own addresses. Explicit To/Cc replaces derived lists: merge them to add someone without dropping others. Review To/Cc. Source files/remote resources are not copied.
 
-`mail_read` validates full MIME up to 16 MiB with attachment sizes/SHA256; text display is capped separately at 60,000 characters. Check completeness/truncation. `attachments_read: false` means document contents were not interpreted. Unsupported attached messages/multipart files are reported, not silently omitted.
+`mail_read` validates full MIME up to 16 MiB with attachment sizes/SHA256; text display is capped separately at 60,000 characters. Check completeness/truncation. `attachments_read: false` means document contents were not interpreted. Attached messages, delivery reports and multipart files are listed in `unsupported_parts`; `attachment_manifest_complete: false` means those containers are excluded from the exportable `attachments` list. The parent message and supported leaf attachments remain available. These containers cannot be exported as original files.
 
 A wording question stays a preview; draft/edit requests stay unsent. Explicit send intent permits agent review/submission without redundant confirmation. Ask only for missing consequential choices.
 
@@ -143,7 +147,7 @@ Read the exact message first. Copy its account/mailbox/UIDVALIDITY/UID and `cont
 }
 ```
 
-Pass this request to `mail_attachment_save`, or `attachment-save --input request.json`. `part_index` is the zero-based position in the complete MIME walk, including containers; copy it from the manifest rather than counting filenames. The tool refetches with PEEK, rechecks message identity and both hashes, validates complete MIME and exports only the selected leaf's original transfer-decoded bytes. It never reconstructs a PDF/CSV from text. Full MIME is limited to 16 MiB and one exported file to 10 MiB. Draft/SMTP/signature settings are not required. Malformed/unsupported MIME and changed content fail before output.
+Pass this request to `mail_attachment_save`, or `attachment-save --input request.json`. `part_index` is the zero-based position in the complete MIME walk, including containers; copy it from the manifest rather than counting filenames. The tool refetches with PEEK, rechecks message identity and both hashes, validates complete MIME and exports only the selected leaf's original transfer-decoded bytes. It never reconstructs a PDF/CSV from text. Full MIME is limited to 16 MiB and one exported file to 10 MiB. Draft/SMTP/signature settings are not required. Malformed MIME and changed content fail before output. Selecting a listed opaque container fails with `UNSUPPORTED_ATTACHMENT_CONTAINER`; supported leaves remain exportable even when other containers are unsupported.
 
 The verified receipt contains `path`, `sha256`, `bytes`, `message`, `part_index`, account identity and untrusted `original_filename`. Output lives only under the configured state's `downloads/<generated-id>/attachment.<fixed-suffix>`: private directories 0700, file 0600, no overwrite. The tool accepts no destination/name; the MIME type chooses a small fixed suffix set, otherwise `.bin`. Sender filenames never form paths. State paths containing symlink components or `..` are rejected; configure the real private host path. Export is a local filesystem write and a read-only mailbox operation; repeated calls create separate files. Retention is owner-managed.
 
@@ -229,4 +233,4 @@ Automatic sorting belongs to Mailroom or another independent project. This plugi
 
 No dedicated forward, move/archive/trash or folder tools. These are implementation gaps, not a task whitelist. This is not a sorter or multiuser service.
 
-Version 0.7.2 adds private original attachment export behind the same discoverable skill. No real mail/accounts/secrets are packaged. [MIT](LICENSE).
+Version 0.7.3 strengthens MIME verification and write recovery, shares complete FETCH parsing, supports injected profiles during SMTP configuration, and isolates known per-account profile errors. Read receipts identify unsupported attachment containers explicitly. No real mail/accounts/secrets are packaged. [MIT](LICENSE).

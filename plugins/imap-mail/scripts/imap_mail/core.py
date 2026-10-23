@@ -25,6 +25,7 @@ import tempfile
 import uuid
 
 from . import read_access
+from .fetch_response import FetchError, fetch_records, requested_fetch
 
 
 MAX_RAW = 16 * 1024 * 1024
@@ -259,25 +260,51 @@ def _html_semantic_value(text):
 
 def semantic(raw):
     """Compare MIME meaning, allowing transfer encoding and CRLF normalization."""
+    if not raw.strip():
+        raise DraftError("MALFORMED_MESSAGE_MIME")
     message = email.message_from_bytes(raw, policy=policy.default)
     names = ("From", "To", "Cc", "Subject", "Date", "Message-ID", "In-Reply-To", "References")
     headers = {name: [str(v) for v in message.get_all(name, [])] for name in names}
 
     def part_value(part):
+        for name in ("Content-Type", "Content-Disposition", "Content-Transfer-Encoding"):
+            values = part.get_all(name, [])
+            if len(values) > 1 or any(getattr(value, "defects", ()) for value in values):
+                raise DraftError("MALFORMED_MESSAGE_MIME")
+        encoding = str(part.get("Content-Transfer-Encoding", "7bit")).strip().lower()
+        if encoding not in {"7bit", "8bit", "binary", "base64", "quoted-printable"}:
+            raise DraftError("MALFORMED_MESSAGE_MIME")
+        normalize_text = (part.get_content_maintype() == "text" and
+                          part.get_content_disposition() is None and part.get_content_charset())
+        parameters = {}
+        for name, parameter in (part.get_params() or [])[1:]:
+            name = name.lower()
+            if name in parameters:
+                raise DraftError("MALFORMED_MESSAGE_MIME")
+            parameters[name] = parameter
+        if part.get_content_maintype() == "multipart":
+            parameters.pop("boundary", None)
+        if normalize_text:
+            parameters.pop("charset", None)
         value = {"type": part.get_content_type(),
                  "disposition": part.get_content_disposition(),
-                 "filename": part.get_filename(), "cid": str(part.get("Content-ID", ""))}
+                 "filename": part.get_filename(), "cid": str(part.get("Content-ID", "")),
+                 "parameters": parameters}
         if part.is_multipart():
             value["parts"] = [part_value(child) for child in part.iter_parts()]
         else:
-            payload = part.get_payload(decode=True) or b""
+            payload = part.get_payload(decode=True)
+            if not isinstance(payload, bytes):
+                raise DraftError("MALFORMED_MESSAGE_MIME")
             # Text attachments are arbitrary file bytes, not necessarily text in
             # an advertised charset (for example a UTF-8 .txt without charset).
             # Normalize only authored inline body parts with a known charset.
-            if (part.get_content_maintype() == "text" and
-                    part.get_content_disposition() is None and part.get_content_charset()):
+            if normalize_text:
                 charset = part.get_content_charset()
-                text = payload.decode(charset).replace("\r\n", "\n").replace("\r", "\n")
+                try:
+                    text = payload.decode(charset).replace("\r\n", "\n").replace("\r", "\n")
+                except (LookupError, UnicodeError):
+                    raise DraftError("MALFORMED_MESSAGE_MIME") from None
                 # Observed provider behavior: prepend this one harmless charset
                 # declaration to UTF-8 HTML fragments. Strip at most one exact
                 # leading declaration; retain all other markup exactly.
@@ -292,7 +319,10 @@ def semantic(raw):
             value["sha256"] = digest(payload)
         return value
 
-    return {"headers": headers, "mime": part_value(message)}
+    result = {"headers": headers, "mime": part_value(message)}
+    if any(part.defects for part in message.walk()):
+        raise DraftError("MALFORMED_MESSAGE_MIME")
+    return result
 
 
 class DraftService:
@@ -336,7 +366,7 @@ class DraftService:
     def _profiles(self, config):
         try:
             profiles_dir = config.get("profiles_dir")
-            return read_access.profiles(str(self._resolve(profiles_dir)) if profiles_dir else None)
+            return read_access.profile_inventory(str(self._resolve(profiles_dir)) if profiles_dir else None)
         except Exception:
             raise DraftError("PROFILE_DISCOVERY_FAILED") from None
 
@@ -347,9 +377,10 @@ class DraftService:
         if not isinstance(entry, dict):
             raise DraftError("INVALID_ACCOUNT_CONFIGURATION")
         profiles = self._profiles(config) if profiles is None else profiles
-        if account not in profiles:
-            raise DraftError("ACCOUNT_PROFILE_UNAVAILABLE")
-        profile = profiles[account]
+        try:
+            profile = profiles.require(account)
+        except read_access.MailError as exc:
+            raise DraftError(str(exc)) from None
         expected = entry.get("identity", {})
         if not isinstance(expected, dict):
             raise DraftError("INVALID_ACCOUNT_CONFIGURATION")
@@ -389,17 +420,21 @@ class DraftService:
         config = config or {"version": 1, "accounts": {}}
         profiles = self._profiles(config)
         result = []
-        for account in sorted(set(profiles) | set(config["accounts"])):
+        for account in sorted(set(profiles.valid) | set(profiles.invalid) | set(config["accounts"])):
             configured = account in config["accounts"]
             row = {"account": account, "configured": configured,
                    "read_ready": False, "drafts_ready": False,
                    "drafts_enabled": False, "from_addresses": [],
                    "default_from": None, "signature_configured": False,
                    "connection": "not_checked", "issues": []}
-            profile = profiles.get(account)
+            profile = profiles.valid.get(account)
             if profile:
                 # These are host-profile identifiers, never credential fields.
                 row.update(profile_identity(profile))
+            if account in profiles.invalid:
+                row.update(status="needs_attention", issues=list(profiles.invalid[account]))
+                result.append(row)
+                continue
             if not configured:
                 row.update(status="setup_needed", issues=["ACCOUNT_NOT_CONFIGURED"])
                 result.append(row)
@@ -425,8 +460,12 @@ class DraftService:
             result.append(row)
         needs_setup = missing_config or not config["accounts"] or not result
         status = "setup_needed" if needs_setup else "ready" if all(r["status"] == "ready" for r in result) else "needs_attention"
+        if profiles.discovery_errors:
+            status = "needs_attention"
         response = {"status": status, "accounts": result, "mailbox_writes": 0,
-                    "discovered_accounts": len(profiles), "configured_accounts": len(config["accounts"])}
+                    "discovered_accounts": len(profiles.valid) + len(profiles.invalid),
+                    "configured_accounts": len(config["accounts"]),
+                    "profile_discovery_issues": list(profiles.discovery_errors)}
         if config.get("preferred_transport") == "imap":
             response["preferred_transport"] = "imap"
         return response
@@ -550,31 +589,30 @@ class DraftService:
         if str(actual) != str(uidvalidity):
             raise DraftError("UIDVALIDITY_CHANGED")
         status, rows = reader.client.uid("FETCH", str(uid), f"(UID RFC822.SIZE FLAGS BODY.PEEK[]<0.{MAX_RAW + 1}>)")
-        literals = [row for row in rows if isinstance(row, tuple)] if status == "OK" else []
-        if len(literals) != 1:
-            raise DraftError("MESSAGE_UNAVAILABLE")
-        prefix, raw = literals[0]
-        match = re.search(rb"\bUID (\d+)\b", prefix)
-        size = re.search(rb"RFC822.SIZE (\d+)", prefix)
-        flags = re.search(rb"FLAGS \(([^)]*)\)", prefix)
-        if not match or match[1].decode() != str(uid) or not size or flags is None:
+        try:
+            records = fetch_records(rows if status == "OK" else [])
+            if len([record for record in records if record.literal is not None]) != 1:
+                raise FetchError("MESSAGE_UNAVAILABLE")
+            record = requested_fetch(records, uid, "", 0)
+        except FetchError as exc:
+            raise DraftError(exc.code) from None
+        raw = record.literal
+        if record.size is None or record.flags is None:
             raise DraftError("FETCH_IDENTITY_MISMATCH")
-        if not isinstance(raw, bytes) or len(raw) > MAX_RAW:
+        if len(raw) > MAX_RAW:
             raise DraftError("MESSAGE_TOO_LARGE_OR_INCOMPLETE")
-        if int(size[1]) > len(raw):
+        if record.size != len(raw):
             # Some providers retain a stale RFC822.SIZE after MIME conversion.
             # Confirm EOF without accepting an incomplete literal or trusting size.
             probe_status, probe_rows = reader.client.uid("FETCH", str(uid), f"(UID BODY.PEEK[]<{len(raw)}.1>)")
-            empty = probe_status == "OK" and any(
-                (isinstance(row, tuple) and row[1] == b"" and
-                 re.search(rb"\bUID " + str(uid).encode() + rb"\b", row[0])) or
-                (isinstance(row, bytes) and b"BODY[]<" in row and b'""' in row and
-                 re.search(rb"\bUID " + str(uid).encode() + rb"\b", row))
-                for row in probe_rows
-            )
+            try:
+                probes = fetch_records(probe_rows if probe_status == "OK" else [])
+                empty = (len(probes) == 1 and requested_fetch(probes, uid, "", len(raw)).literal == b"")
+            except FetchError:
+                empty = False
             if not empty:
                 raise DraftError("MESSAGE_TOO_LARGE_OR_INCOMPLETE")
-        return raw, flags[1].decode("ascii").split()
+        return raw, list(record.flags)
 
     def _source(self, reader, reply, account):
         required = {"mailbox", "uidvalidity", "uid"}
@@ -884,6 +922,7 @@ class DraftService:
                 return self._reconcile(path, record, raw, entry, profile)
             if record["state"] != "prepared":
                 raise DraftError("INVALID_DRAFT_STATE")
+            semantic(raw)
             review = record["immutable"]["review"]
             with self._reader(profile) as reader:
                 folder, validity = self._drafts(reader, entry)

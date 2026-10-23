@@ -96,6 +96,23 @@ class DownloadTests(unittest.TestCase):
         self.assertEqual(Path(first["path"]).read_bytes(), b"first")
         self.assertEqual(Path(second["path"]).read_bytes(), b"second")
 
+    def test_nested_attachment_is_opaque_and_sibling_exports_original_bytes(self):
+        message = self.fixture.message()
+        nested = self.fixture.message(files=[("inside.bin", b"nested bytes")])
+        message.add_attachment(nested, filename="forwarded.eml")
+        message.add_attachment(self.payload, maintype="application", subtype="pdf", filename="outside.pdf")
+        self.fixture.save(message)
+        result = self.fixture.read()
+        self.assertEqual(result["unsupported_parts"][0]["part_index"], 2)
+        self.assertEqual([(item["part_index"], item["filename"]) for item in result["attachment_details"]],
+                         [(6, "outside.pdf")])
+        self.args = self.arguments(result)
+        self.error("UNSUPPORTED_ATTACHMENT_CONTAINER", lambda: self.save(part_index=2, expected_sha256="0" * 64))
+        self.error("ATTACHMENT_PART_UNAVAILABLE", lambda: self.save(part_index=5, expected_sha256=digest(b"nested bytes")))
+        saved = self.save()
+        self.assertEqual(Path(saved["path"]).read_bytes(), self.payload)
+        self.assertEqual(saved["part_index"], 6)
+
     def test_sender_filename_and_body_never_select_a_path(self):
         for filename in ("../../settings.json", "/tmp/overwrite.pdf", r"C:\Windows\system.ini", "../../../.ssh/authorized_keys"):
             with self.subTest(filename=filename):

@@ -84,11 +84,13 @@ class FakeReader:
             flags = b"\\Draft" if self.mailbox == "Drafts" else b"\\Seen"
             if self.mailbox == "Drafts" and self.server.draft_marked_deleted:
                 flags += b" \\Deleted"
-            prefix = f"1 (UID {uid} RFC822.SIZE {len(raw)} FLAGS (".encode() + flags + b") BODY[] {" + str(len(raw)).encode() + b"}"
+            size = len(raw)
             partial = re.search(r"<(\d+)\.(\d+)>", str(args[-1]))
             if partial:
                 offset, maximum = map(int, partial.groups())
                 raw = raw[offset:offset + maximum]
+            body_offset = f"<{partial[1]}>" if partial else ""
+            prefix = f"1 (UID {uid} RFC822.SIZE {size} FLAGS (".encode() + flags + f") BODY[]{body_offset} {{{len(raw)}}}".encode()
             return "OK", [(prefix, raw), b")"]
         raise AssertionError(f"Unexpected mutating or unbounded command: {command}")
 
@@ -357,13 +359,15 @@ class MultiAccountBoundaryTests(DraftFixture):
         broken = self.profile_dir / "malformed.json"
         broken.write_text('{"PRIVATE-TEST-SENTINEL": invalid json')
         broken.chmod(0o600)
-        with self.assertRaises(DraftError) as discovery_error:
-            self.service.accounts()
-        self.assertEqual(discovery_error.exception.code, "PROFILE_DISCOVERY_FAILED")
-        self.assertNotIn("PRIVATE-TEST-SENTINEL", str(discovery_error.exception))
+        discovery = self.service.accounts()
+        self.assertEqual(discovery["status"], "needs_attention")
+        self.assertEqual(discovery["profile_discovery_issues"], ["INVALID_PROFILE_JSON"])
+        self.assertTrue(all(not row["read_ready"] for row in discovery["accounts"]))
+        self.assertNotIn("PRIVATE-TEST-SENTINEL", json.dumps(discovery))
         checked = self.service.check("example")
         self.assertEqual(checked["status"], "needs_attention")
-        self.assertEqual(checked["error_code"], "PROFILE_DISCOVERY_FAILED")
+        self.assertEqual(checked["error_code"], "PROFILE_DISCOVERY_INCOMPLETE")
+        self.assertNotIn("PRIVATE-TEST-SENTINEL", json.dumps(checked))
         self.assertFalse(checked["connection"])
         self.assertEqual(checked["mailbox_writes"], 0)
         self.assertEqual(self.server.connection_count, 0)

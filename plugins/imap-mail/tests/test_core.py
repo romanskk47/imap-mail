@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from imap_mail.core import DraftError, DraftService, digest, semantic
+from imap_mail import read_access
 
 
 class Server:
@@ -77,7 +78,12 @@ class FakeReader:
             if raw is None:
                 return "OK", []
             flags = "\\Draft" if self.mailbox == "Drafts" and self.server.draft_flag else ""
-            return "OK", [(f"1 (UID {uid} RFC822.SIZE {len(raw)} FLAGS ({flags})".encode(), raw), b")"]
+            partial = re.search(r"<([0-9]+)\.([0-9]+)>", args[-1])
+            offset = f"<{partial[1]}>" if partial else ""
+            size = len(raw)
+            if partial:
+                raw = raw[int(partial[1]):int(partial[1]) + int(partial[2])]
+            return "OK", [(f"1 (UID {uid} RFC822.SIZE {size} FLAGS ({flags}) BODY[]{offset} {{{len(raw)}}}".encode(), raw), b")"]
         raise AssertionError("Unexpected command: " + command)
 
     def append(self, mailbox, flags, date, raw):
@@ -163,7 +169,7 @@ class DraftServiceTests(unittest.TestCase):
 
     def test_missing_configuration_reports_setup_needed(self):
         service = DraftService(config_path=self.root / "missing.json")
-        with patch("imap_mail.core.read_access.profiles", return_value={}):
+        with patch("imap_mail.core.read_access.profile_inventory", return_value=read_access.ProfileInventory({}, {}, ())):
             result = service.accounts()
         self.assertEqual(result["status"], "setup_needed")
         self.assertEqual(result["accounts"], [])
