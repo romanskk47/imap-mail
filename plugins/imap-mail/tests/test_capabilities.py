@@ -136,7 +136,7 @@ class CapabilitiesTests(unittest.TestCase):
 
     def test_real_gaps_are_not_called_forbidden(self):
         result = capabilities(FakeService([]))
-        self.assertEqual({"forward", "attachment_download", "move",
+        self.assertEqual({"forward", "move",
                           "archive", "trash", "folder_create_rename_delete",
                           "oauth_mail_account_authentication"}, set(result["not_implemented"]))
         self.assertIn("not a forbidden", result["unknown_or_missing_operation"]["meaning"])

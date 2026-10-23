@@ -19,6 +19,7 @@ import tempfile
 import uuid
 
 from . import read_access
+from .download import attachment_save, parse_mime
 from .core import (DraftError, DraftService, MESSAGE_ID, MAX_RAW, MAX_BODY, STABLE_ID,
                    addresses, bare_address, digest, header, profile_identity,
                    public, semantic, text_part, write_json, write_new)
@@ -96,35 +97,7 @@ class SendService(DraftService):
         with self._reader(profile) as reader:
             raw, flags = self._full_raw(reader, mailbox, uidvalidity, uid)
         try:
-            if not raw.strip():
-                raise ValueError("Empty MIME")
-            message = email.message_from_bytes(raw, policy=policy.default)
-            files = []
-            for part in message.walk():
-                if part.is_multipart():
-                    # Attached messages/multipart files are containers rather
-                    # than leaf payloads. Do not silently omit their filename
-                    # or publish a hash of a reserialized, non-original file.
-                    if (part.get_content_maintype() == "message" or
-                            part.get_content_disposition() == "attachment" or
-                            part.get_filename() is not None):
-                        raise DraftError("UNSUPPORTED_MESSAGE_MIME")
-                    continue
-                # Decoding also exposes invalid base64 defects, so inspect all
-                # parts before claiming a complete attachment manifest.
-                payload = part.get_payload(decode=True)
-                if not isinstance(payload, bytes):
-                    raise ValueError("Undecodable MIME payload")
-                disposition = part.get_content_disposition()
-                filename = part.get_filename()
-                cid = str(part.get("Content-ID", ""))
-                if (disposition == "attachment" or filename is not None or cid or
-                        part.get_content_maintype() != "text"):
-                    files.append({"filename": filename, "type": part.get_content_type(),
-                                  "disposition": disposition, "cid": cid,
-                                  "bytes": len(payload), "sha256": digest(payload)})
-            if any(part.defects for part in message.walk()):
-                raise ValueError("Defective MIME")
+            message, files, _ = parse_mime(raw)
             body, body_type = "", None
             for subtype in ("plain", "html"):
                 part = message.get_body(preferencelist=(subtype,))
@@ -157,6 +130,9 @@ class SendService(DraftService):
                 "attachments": [item["filename"] for item in files],
                 "attachment_details": files, "attachment_manifest_complete": True,
                 "attachments_read": False, "contentTrust": "untrusted email"}
+
+    def attachment_save(self, account, message, part_index, expected_sha256):
+        return attachment_save(self, account, message, part_index, expected_sha256)
 
     def _send_account(self, config, account, profiles=None):
         entry, profile = self._account(config, account, profiles=profiles)

@@ -39,6 +39,9 @@ def parser() -> argparse.ArgumentParser:
     read = commands.add_parser("read")
     for field in ("account", "mailbox", "uidvalidity", "uid"):
         read.add_argument(field)
+    download = commands.add_parser("attachment-save", help="Save one hash-pinned attachment under private plugin state; no mailbox writes")
+    download.add_argument("--input", "--request", dest="request", required=True,
+                          help="JSON with account, message identity/content_sha256, part_index and expected_sha256")
     preview = commands.add_parser("draft-preview")
     preview.add_argument("--request", "--input", dest="request", required=True, help="JSON file containing exact preview arguments")
     preview.add_argument("--response-view", choices=["full", "compact"])
@@ -96,20 +99,20 @@ def request(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
     command = values.pop("command")
     values.pop("config")
     values.pop("state_dir")
-    if command in ("draft-preview", "draft-edit-preview", "draft-attachment-preview", "send-preview", "flags-preview"):
+    if command in ("attachment-save", "draft-preview", "draft-edit-preview", "draft-attachment-preview", "send-preview", "flags-preview"):
         path = Path(values["request"]).expanduser()
         if not path.is_file() or path.stat().st_size > 2 * 1024 * 1024:
-            raise InvalidArguments("Preview request must be a JSON file no larger than 2 MiB")
+            raise InvalidArguments("Request must be a JSON file no larger than 2 MiB")
         try:
             body = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-            raise InvalidArguments("Preview request is not readable UTF-8 JSON") from exc
+            raise InvalidArguments("Request is not readable UTF-8 JSON") from exc
         response_view = values.get("response_view")
         if response_view is not None:
             if not isinstance(body, dict) or body.get("response_view", response_view) != response_view:
                 raise InvalidArguments("Conflicting preview response views")
             body["response_view"] = response_view
-        return {"draft-preview": "mail_draft_preview", "draft-edit-preview": "mail_draft_edit_preview",
+        return {"attachment-save": "mail_attachment_save", "draft-preview": "mail_draft_preview", "draft-edit-preview": "mail_draft_edit_preview",
                 "draft-attachment-preview": "mail_draft_attachment_preview",
                 "send-preview": "mail_send_preview", "flags-preview": "mail_flags_preview"}[command], body
     names = {"accounts": "mail_accounts", "capabilities": "mail_capabilities", "check": "mail_check", "folders": "mail_folders", "search": "mail_search",
