@@ -11,7 +11,7 @@ import sys
 from typing import Any
 
 SERVER_NAME = "imap-mail"
-SERVER_VERSION = "0.7.1"
+SERVER_VERSION = "0.7.2"
 LATEST_PROTOCOL = "2025-11-25"
 SUPPORTED_PROTOCOLS = {"2024-11-05", "2025-03-26", "2025-06-18", LATEST_PROTOCOL}
 MAX_REQUEST_BYTES = 3 * 1024 * 1024
@@ -78,6 +78,14 @@ TOOLS = [
          "Read exact-account MIME with PEEK (up to 16 MiB), bounded text and attachment hashes. Completeness is separate from text truncation; attachment contents are not interpreted. No flag changes.",
          obj({"account": ACCOUNT, "mailbox": MAILBOX, "uidvalidity": UIDVALIDITY, "uid": UID},
              ["account", "mailbox", "uidvalidity", "uid"])),
+    tool("mail_attachment_save", "Save an original mail attachment locally",
+         "Save one exact MIME leaf from mail_read: copy its message identity/content_sha256, part_index and expected_sha256. Recheck with IMAP PEEK and save original decoded bytes (up to 10 MiB) only under private state/downloads with a generated path. No caller path, overwrite, mail flags or send. Returned path belongs to the executing host, not automatically the client.",
+         obj({"account": ACCOUNT,
+              "message": obj({**REPLY["properties"], "content_sha256": PREVIEW_HASH},
+                             [*REPLY["required"], "content_sha256"]),
+              "part_index": {"type": "integer", "minimum": 0}, "expected_sha256": PREVIEW_HASH},
+             ["account", "message", "part_index", "expected_sha256"]),
+         read_only=False, idempotent=False),
     tool("mail_draft_preview", "Prepare unsent IMAP draft preview",
          "Freeze an unsent draft for agent review: sender, To/Cc, body, signature, source and attachments. Does not save or send; apply only within a draft request.",
          obj({"account": ACCOUNT, "body_text": string(200000),
@@ -240,8 +248,10 @@ def dispatch_tool(name: str, arguments: Any, *, service: Any = None) -> Any:
             raise InvalidArguments("At least one explicit flag value is required")
         if any(item["account"] != values["account"] for item in values["messages"]):
             raise InvalidArguments("Every message must belong to the selected account")
+    if name == "mail_attachment_save" and values["message"]["account"] != values["account"]:
+        raise InvalidArguments("Message source account must match the selected account")
     methods = {"mail_accounts": "accounts", "mail_check": "check", "mail_folders": "folders", "mail_search": "search",
-               "mail_read": "read", "mail_draft_preview": "preview", "mail_draft_apply": "apply",
+               "mail_read": "read", "mail_attachment_save": "attachment_save", "mail_draft_preview": "preview", "mail_draft_apply": "apply",
                "mail_preview_read": "preview_read",
                "mail_draft_status": "status", "mail_draft_edit_preview": "draft_edit_preview",
                "mail_draft_attachment_preview": "draft_attachment_preview",

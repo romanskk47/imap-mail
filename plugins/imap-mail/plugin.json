@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "imap-mail",
-  "version": "0.7.1",
-  "description": "Manage email through IMAP and opt-in SMTP with one agent workflow: search, read, draft, edit, mark and send on request.",
+  "version": "0.7.2",
+  "description": "Manage email through IMAP and opt-in SMTP with one agent workflow: search, read, save attachments, draft, edit, mark and send on request.",
   "author": {
     "name": "Piotr Romański"
   },
@@ -23,7 +23,7 @@
       "interface": {
         "displayName": "IMAP Mail",
         "shortDescription": "Manage email with one IMAP/SMTP workflow",
-        "longDescription": "Search and read mail, prepare or edit drafts with signatures and attachments, mark read/unread or starred, and send when requested. One skill includes account setup. Each Mac, Linux or cloud runtime uses its authorized host-owned secrets and network access. Remote execution requires a separately configured launcher; no hosted HTTP connector is included."
+        "longDescription": "Search and read mail, save original attachments privately, prepare or edit drafts with signatures and attachments, mark read/unread or starred, and send when requested. One skill includes account setup. Each Mac, Linux or cloud runtime uses its authorized host-owned secrets and network access. Remote execution requires a separately configured launcher; no hosted HTTP connector is included."
       }
     }
   }

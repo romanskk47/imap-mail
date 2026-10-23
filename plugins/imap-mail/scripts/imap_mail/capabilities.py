@@ -70,6 +70,7 @@ def capabilities(service, account=None):
             "folder_list": ["mail_folders"],
             "search": ["mail_search"],
             "read_mime_and_attachment_manifest": ["mail_read"],
+            "attachment_download": ["mail_attachment_save"],
             "compose_and_reply_draft": ["mail_draft_preview", "mail_draft_apply", "mail_draft_status"],
             "precise_draft_text_edit": ["mail_draft_edit_preview", "mail_draft_edit_apply", "mail_draft_edit_status"],
             "add_or_normalize_draft_attachments": ["mail_draft_attachment_preview", "mail_draft_edit_apply", "mail_draft_edit_status"],
@@ -89,6 +90,7 @@ def capabilities(service, account=None):
         },
         "workflows": {
             "read": ["mail_folders", "mail_search", "mail_read"],
+            "attachment_download": ["mail_read", "mail_attachment_save"],
             "draft": ["mail_check", "mail_draft_preview", "mail_draft_apply"],
             "reply": ["mail_read", "mail_draft_preview", "mail_draft_apply"],
             "edit": ["mail_read", "mail_draft_edit_preview", "mail_draft_edit_apply"],
@@ -108,11 +110,11 @@ def capabilities(service, account=None):
             "Review immutable preview ID/hash before apply. A draft request does not authorize send; sending requires an explicit human request.",
             "Unavailable local permissions are setup gaps, not missing implementations. Discovery never enables drafts or SMTP.",
             "On an uncertain write, inspect its same preview ID with the recovery tool; do not create a new preview to retry.",
-            "mail_read returns file metadata/hashes, not downloaded files or interpreted attachment contents. A verified MIME save does not prove an iPhone editor can load it.",
+            "mail_read returns stable MIME part indices and hashes; mail_attachment_save rechecks message/part hashes and saves up to 10 MiB of original decoded bytes under private state/downloads. Paths belong to the executing host, with no automatic remote transfer or content interpretation.",
             "Flag changes use explicit seen/flagged target values and exact message references. The service verifies content and flags; a verified receipt needs no redundant full-message response to the agent.",
         ],
         "not_implemented": [
-            "forward", "attachment_download", "move", "archive",
+            "forward", "move", "archive",
             "trash", "folder_create_rename_delete", "oauth_mail_account_authentication",
         ],
         "unknown_or_missing_operation": {

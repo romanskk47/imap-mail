@@ -85,8 +85,8 @@ class FullReadTests(unittest.TestCase):
         self.assertEqual(result["raw_bytes"], len(raw))
         self.assertEqual(result["content_sha256"], digest(raw))
         self.assertEqual(result["attachments"], [name for name, _ in files])
-        for detail, (name, payload) in zip(result["attachment_details"], files):
-            self.assertEqual(detail, {"filename": name, "type": "application/octet-stream",
+        for index, (detail, (name, payload)) in enumerate(zip(result["attachment_details"], files), start=4):
+            self.assertEqual(detail, {"part_index": index, "filename": name, "type": "application/octet-stream",
                 "disposition": "attachment", "cid": "", "bytes": len(payload), "sha256": digest(payload)})
 
     def test_empty_or_whitespace_plain_uses_nonempty_html_and_strips_script_style(self):

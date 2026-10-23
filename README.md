@@ -2,7 +2,7 @@
 
 One plugin and one `mail` skill for email in Codex and Claude Code. Search and read through IMAP, compose or edit drafts, change read/star status, and send requested messages through opt-in SMTP. It runs directly on a configured Mac, Linux host or cloud runtime.
 
-Version **0.7.1** combines capability discovery, operation-specific readiness, compact previews and reviewed flags with agent-led SMTP configuration. The package uses Python 3.10+ and the standard library.
+Version **0.7.2** adds hash-pinned original attachment export to the existing email workflow. The package uses Python 3.10+ and the standard library.
 
 ## Install
 
@@ -36,13 +36,14 @@ Mailroom or another automatic sorter remains an independent service with its own
 | --- | --- |
 | Discover accounts/capabilities | Offline inventory; keeps account identity and readiness gaps explicit |
 | Read/search/list folders | IMAP PEEK, stable references, MIME and file hashes up to 16 MiB |
+| Save original attachments | Exact message and MIME part hashes; private host-local files up to 10 MiB, no flag changes |
 | Compose/reply | Frozen preview, configured signature, To/Cc and selected attachments |
 | Edit drafts/files | Verify a replacement before retiring the pinned original; preserve unrelated content |
 | Mark read/star status | Reviewed changes to `\Seen` and `\Flagged`, enabled per account |
 | Configure SMTP | Reuse the exact account's credential after explicit setup authorization; no test mail |
 | Send | Explicit message request, frozen review, submission journal and separate Sent-copy verification |
 
-Forward, attachment download, move/archive/trash, folder management and OAuth provider authentication are not implemented as dedicated operations. `mail_capabilities` reports these gaps so the agent can explain the actual limitation when relevant.
+Forward, move/archive/trash, folder management and OAuth provider authentication are not implemented as dedicated operations. `mail_capabilities` reports these gaps so the agent can explain the actual limitation when relevant.
 
 A wording request stays a preview; a draft stays unsent. Only the user's send instruction authorizes submitting that message. SMTP acceptance is not proof of delivery. Uncertain writes use their existing operation journal, never blind retries.
 

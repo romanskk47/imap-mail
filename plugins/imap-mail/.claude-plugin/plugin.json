@@ -1,7 +1,7 @@
 {
   "name": "imap-mail",
-  "version": "0.7.1",
-  "description": "Manage email through IMAP and opt-in SMTP with one agent workflow: search, read, draft, edit, mark and send on request.",
+  "version": "0.7.2",
+  "description": "Manage email through IMAP and opt-in SMTP with one agent workflow: search, read, save attachments, draft, edit, mark and send on request.",
   "author": {
     "name": "Piotr Romański"
   },

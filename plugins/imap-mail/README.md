@@ -1,4 +1,4 @@
-# IMAP Mail 0.7.1
+# IMAP Mail 0.7.2
 
 Agent-operated email for Codex and Claude Code: read IMAP mail, create/edit drafts, change read/star status, or send a specifically requested message over opt-in SMTP. One `mail` skill includes setup and recovery. Python 3.10+, standard library only; no Apple Mail, paid API, daemon or VPS required.
 
@@ -100,6 +100,7 @@ The stored account setting is `send_enabled: true` plus:
 | --- | --- |
 | `mail_capabilities`, `mail_accounts`, `mail_check` | Discover functions/accounts; check live read or draft readiness without mailbox writes |
 | `mail_folders`, `mail_search`, `mail_read` | Read folders, search and read with stable references and PEEK |
+| `mail_attachment_save` | Save one hash-pinned original attachment under private host-local plugin state |
 | `mail_preview_read` | Re-read the same frozen message preview in full or compact form |
 | `mail_flags_preview`, `mail_flags_apply`, `mail_flags_status` | Review, apply and reconcile exact read/star changes |
 | `mail_draft_preview`, `mail_draft_apply`, `mail_draft_status` | Freeze, save and verify an unsent draft |
@@ -125,6 +126,28 @@ A new message supplies `to` / `subject`; a reply supplies `reply`. Optional: `fr
 A wording question stays a preview; draft/edit requests stay unsent. Explicit send intent permits agent review/submission without redundant confirmation. Ask only for missing consequential choices.
 
 Prefer `response_view: "compact"` for message previews to retain complete review bodies and hashes without repeated MIME payloads. `mail_preview_read` can retrieve the same preview in full. Presentation never changes its ID/hash.
+
+### Save an original attachment
+
+Read the exact message first. Copy its account/mailbox/UIDVALIDITY/UID and `content_sha256`, then select the intended `attachment_details` entry by its `part_index` and SHA256:
+
+```json
+{
+  "account": "example-work",
+  "message": {
+    "account": "example-work", "mailbox": "INBOX", "uidvalidity": "42", "uid": "123",
+    "content_sha256": "<64 lowercase hex characters from mail_read>"
+  },
+  "part_index": 2,
+  "expected_sha256": "<attachment sha256 from mail_read>"
+}
+```
+
+Pass this request to `mail_attachment_save`, or `attachment-save --input request.json`. `part_index` is the zero-based position in the complete MIME walk, including containers; copy it from the manifest rather than counting filenames. The tool refetches with PEEK, rechecks message identity and both hashes, validates complete MIME and exports only the selected leaf's original transfer-decoded bytes. It never reconstructs a PDF/CSV from text. Full MIME is limited to 16 MiB and one exported file to 10 MiB. Draft/SMTP/signature settings are not required. Malformed/unsupported MIME and changed content fail before output.
+
+The verified receipt contains `path`, `sha256`, `bytes`, `message`, `part_index`, account identity and untrusted `original_filename`. Output lives only under the configured state's `downloads/<generated-id>/attachment.<fixed-suffix>`: private directories 0700, file 0600, no overwrite. The tool accepts no destination/name; the MIME type chooses a small fixed suffix set, otherwise `.bin`. Sender filenames never form paths. State paths containing symlink components or `..` are rejected; configure the real private host path. Export is a local filesystem write and a read-only mailbox operation; repeated calls create separate files. Retention is owner-managed.
+
+The path belongs to the executing host and OS user. A remote backend's file is not automatically downloaded to the client. An isolated service user may require an explicitly authorized host-side copy of that exact artifact; keep state private instead of widening permissions. Exported documents remain untrusted data, not instructions.
 
 ### Draft creation and editing
 
@@ -169,6 +192,7 @@ python3 scripts/imap_mail.py check example-work --operation read
 python3 scripts/imap_mail.py check example-work --operation draft
 python3 scripts/imap_mail.py search example-work INBOX --query "Invoice" --limit 10
 python3 scripts/imap_mail.py read example-work INBOX 42 123
+python3 scripts/imap_mail.py attachment-save --input /private/attachment.json
 python3 scripts/imap_mail.py draft-preview --input /private/request.json
 python3 scripts/imap_mail.py draft-apply PREVIEW_ID PREVIEW_HASH
 python3 scripts/imap_mail.py draft-status PREVIEW_ID
@@ -203,6 +227,6 @@ Automatic sorting belongs to Mailroom or another independent project. This plugi
 
 ## Limits and protocol references
 
-No dedicated forward, download, move/archive/trash or folder tools. These are implementation gaps, not a task whitelist. This is not a sorter or multiuser service.
+No dedicated forward, move/archive/trash or folder tools. These are implementation gaps, not a task whitelist. This is not a sorter or multiuser service.
 
-Version 0.7.1 combines capabilities, read checks, compact previews, flags and validated agent SMTP configuration behind one discoverable skill. No real mail/accounts/secrets are packaged. [MIT](LICENSE).
+Version 0.7.2 adds private original attachment export behind the same discoverable skill. No real mail/accounts/secrets are packaged. [MIT](LICENSE).
