@@ -249,6 +249,109 @@ class AgentSendConfigureTests(unittest.TestCase):
         self.assertEqual([], self.calls)
         self.assertEqual(self.config, self.current())
 
+    def unsafe_profile_source(self, case):
+        path = self.profiles / "work.json"
+        if case == "directory":
+            self.profiles.chmod(0o777)
+        elif case == "symlink":
+            target = self.private / "profile-target.json"
+            self.write_json(target, self.profile)
+            path.unlink()
+            path.symlink_to(target)
+        else:
+            self.write_json(path, {**self.profile, "metadata": "x" * (1024 * 1024 + 1)})
+
+    def restore_profile_source(self):
+        self.profiles.chmod(0o700)
+        path = self.profiles / "work.json"
+        if path.is_symlink():
+            path.unlink()
+        self.write_json(path, self.profile)
+
+    def test_unsafe_file_source_rejected_before_read_check_or_save(self):
+        cases = (("directory", "PRIVATE_DIRECTORY_PERMISSIONS_REQUIRE_700"),
+                 ("symlink", "UNSAFE_SETUP_PATH"), ("oversized", "PROFILE_DISCOVERY_FAILED"))
+        before = self.config_path.read_bytes()
+        for case, code in cases:
+            with self.subTest(case=case):
+                self.unsafe_profile_source(case)
+                with patch.object(send_setup.setup.read_access, "_profile_json",
+                                  side_effect=AssertionError("Unsafe profile must not be read")) as parse:
+                    self.error(code, self.configure)
+                self.assertEqual(0, parse.call_count)
+                self.assertEqual([], self.calls)
+                self.assertEqual(before, self.config_path.read_bytes())
+                self.restore_profile_source()
+
+    def test_file_source_guards_rechecked_between_initialization_and_check(self):
+        cases = (("directory", "PRIVATE_DIRECTORY_PERMISSIONS_REQUIRE_700"),
+                 ("symlink", "UNSAFE_SETUP_PATH"), ("oversized", "PROFILE_DISCOVERY_FAILED"))
+        payload = {"host": "smtp.example.test", "port": 465, "security": "ssl", "sent_copy": "server",
+                   "host_confirmation": "smtp.example.test", "host_confirmed": True,
+                   "credential_reuse_consent": True, "enable_sending_consent": True}
+        for case, code in cases:
+            with self.subTest(case=case):
+                session = send_setup.SendSetupSession(self.config_path, "work", self.checker)
+                try:
+                    self.unsafe_profile_source(case)
+                    self.error(code, lambda: session.check(payload))
+                finally:
+                    session.close()
+                    self.restore_profile_source()
+                self.assertEqual([], self.calls)
+                self.assertEqual(self.config, self.current())
+
+    def test_file_source_guards_rechecked_after_successful_check_before_save(self):
+        cases = (("directory", "PRIVATE_DIRECTORY_PERMISSIONS_REQUIRE_700"),
+                 ("symlink", "UNSAFE_SETUP_PATH"), ("oversized", "PROFILE_DISCOVERY_FAILED"))
+        before = self.config_path.read_bytes()
+        for case, code in cases:
+            with self.subTest(case=case):
+                def mutate(account, smtp):
+                    self.unsafe_profile_source(case)
+                    return self.checker(account, smtp)
+
+                self.error(code, lambda: self.configure(checker=mutate))
+                self.assertEqual(1, len(self.calls))
+                self.assertEqual(before, self.config_path.read_bytes())
+                self.calls.clear()
+                self.restore_profile_source()
+
+    def test_file_source_foreign_invalid_profile_does_not_block_selected_account(self):
+        foreign = {"id": "broken", "host": "imap.other.test", "entity": "Other"}
+        self.write_json(self.profiles / "foreign.json", foreign)
+        result = self.configure()
+        self.assertEqual("saved", result["status"])
+        self.assertEqual(["work"], [account for account, _ in self.calls])
+        self.assertEqual(foreign, json.loads((self.profiles / "foreign.json").read_text()))
+
+    def test_explicit_file_source_keeps_guards_when_injected_json_is_present(self):
+        self.profiles.chmod(0o777)
+        with patch.dict(os.environ, {"MAIL_PROFILES_JSON": json.dumps([self.profile])}):
+            self.error("PRIVATE_DIRECTORY_PERMISSIONS_REQUIRE_700", self.configure)
+        self.assertEqual([], self.calls)
+        self.assertEqual(self.config, self.current())
+
+    def test_injected_source_does_not_inspect_ignored_unsafe_file_source(self):
+        self.config.pop("profiles_dir")
+        self.write_json(self.config_path, self.config)
+        self.unsafe_profile_source("symlink")
+        self.profiles.chmod(0o777)
+        with patch.dict(os.environ, {"MAIL_PROFILES_JSON": json.dumps([self.profile]),
+                                     "MAIL_PROFILES_DIR": str(self.profiles)}):
+            result = self.configure()
+        self.assertEqual("saved", result["status"])
+        self.assertEqual(["work"], [account for account, _ in self.calls])
+
+    def test_environment_file_source_keeps_setup_guards(self):
+        self.config.pop("profiles_dir")
+        self.write_json(self.config_path, self.config)
+        self.profiles.chmod(0o777)
+        with patch.dict(os.environ, {"MAIL_PROFILES_DIR": str(self.profiles)}):
+            self.error("PRIVATE_DIRECTORY_PERMISSIONS_REQUIRE_700", self.configure)
+        self.assertEqual([], self.calls)
+        self.assertEqual(self.config, self.current())
+
     def invoke(self, values):
         service = type("ConfigService", (), {"config_path": self.config_path})()
         return mcp.handle_request({"jsonrpc": "2.0", "id": 8, "method": "tools/call",

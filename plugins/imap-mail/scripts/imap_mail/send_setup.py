@@ -71,8 +71,9 @@ class SendSetupSession:
     def _identity(self):
         snapshot = self.storage._configuration()
         config, original = snapshot.config, snapshot.original
+        _, inventory = self.storage._profile_inventory(config)
         service = DraftService(config_path=self.config_path)
-        entry, profile = service._account(config, self.account)
+        entry, profile = service._account(config, self.account, profiles=inventory)
         return config, original, entry, profile
 
     def _open(self):

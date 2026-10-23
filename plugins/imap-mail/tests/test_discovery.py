@@ -76,6 +76,20 @@ class AccountDiscoveryTests(unittest.TestCase):
         self.assertNotIn("SYNTHETIC_UNUSED", json.dumps(response))
         self.assertFalse((self.root / "state").exists())
 
+    def test_oversized_profile_is_bounded_before_parsing_and_has_no_inferred_id(self):
+        oversized = self.root / "oversized"
+        oversized.mkdir(mode=0o700)
+        path = oversized / "account-1.json"
+        self.write_json(path, {**self.profiles["account-1"], "metadata": "x" * read_access.MAX_PROFILE_BYTES})
+        with patch.object(read_access, "_profile_json", side_effect=AssertionError("Too large to parse")) as parse:
+            inventory = read_access.profile_inventory(oversized)
+        self.assertEqual(0, parse.call_count)
+        self.assertEqual({}, inventory.valid)
+        self.assertEqual({}, inventory.invalid)
+        self.assertEqual(("PROFILE_FILE_TOO_LARGE",), inventory.discovery_errors)
+        with self.assertRaisesRegex(read_access.MailError, "^PROFILE_DISCOVERY_INCOMPLETE$"):
+            inventory.require("account-1")
+
     def test_missing_configuration_still_discovers_profiles_without_enabling_writes(self):
         service = DraftService(config_path=self.root / "absent.json", reader_factory=self.server.reader)
         with patch("imap_mail.core.read_access.profile_inventory", return_value=read_access.ProfileInventory(self.profiles, {}, ())):

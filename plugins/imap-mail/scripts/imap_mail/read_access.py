@@ -25,6 +25,7 @@ else:
     from fetch_response import FetchError, fetch_records, requested_fetch
 
 MAX_BYTES = 2097152
+MAX_PROFILE_BYTES = 1024 * 1024
 HEADERS = ('From', 'To', 'Subject', 'Date', 'Message-ID', 'In-Reply-To',
            'References', 'List-ID', 'List-Unsubscribe', 'Auto-Submitted',
            'Authentication-Results', 'Reply-To', 'Return-Path')
@@ -75,22 +76,33 @@ def _profile_json(value):
     return json.loads(value, object_pairs_hook=unique_pairs)
 
 
+def profile_directory(directory=None):
+    if directory is None and 'MAIL_PROFILES_JSON' in os.environ:
+        return None
+    return Path(directory or os.environ.get('MAIL_PROFILES_DIR', '~/.secrets/services/mail')).expanduser()
+
+
 def profile_inventory(directory=None) -> ProfileInventory:
     documents, discovery_errors = [], []
-    if directory is None and 'MAIL_PROFILES_JSON' in os.environ:
+    root = profile_directory(directory)
+    if root is None:
         try:
             raw = _profile_json(os.environ['MAIL_PROFILES_JSON'])
             documents = [(doc, None) for doc in (raw if isinstance(raw, list) else [raw])]
         except (ValueError, UnicodeError):
             discovery_errors.append('INVALID_PROFILE_JSON')
     else:
-        root = Path(directory or os.environ.get('MAIL_PROFILES_DIR', '~/.secrets/services/mail')).expanduser()
         try:
             if root.exists() and not root.is_dir():
                 raise OSError('Profile source is not a directory')
             for path in sorted(root.rglob('*.json')):
                 try:
-                    documents.append((_profile_json(path.read_text(encoding='utf-8')), path))
+                    with path.open('rb') as stream:
+                        data = stream.read(MAX_PROFILE_BYTES + 1)
+                    if len(data) > MAX_PROFILE_BYTES:
+                        discovery_errors.append('PROFILE_FILE_TOO_LARGE')
+                        continue
+                    documents.append((_profile_json(data.decode('utf-8')), path))
                 except (ValueError, UnicodeError):
                     discovery_errors.append('INVALID_PROFILE_JSON')
                 except OSError:
