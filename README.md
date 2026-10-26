@@ -2,7 +2,7 @@
 
 One plugin and one `mail` skill for email in Codex and Claude Code. Search and read through IMAP, compose or edit drafts, change read/star status, and send requested messages through opt-in SMTP. It runs directly on a configured Mac, Linux host or cloud runtime.
 
-Version **0.7.3** strengthens MIME verification, accepts valid IMAP FETCH ordering, and isolates profile errors. Attached emails and delivery reports remain readable with explicit export limits. The package uses Python 3.10+ and the standard library.
+Version **0.7.4** reads and exports legacy encoded attachment filenames used by mail clients, including Polish filenames. MIME structure, transfer encoding and attachment bytes remain strictly checked. The package uses Python 3.10+ and the standard library.
 
 ## Install
 

@@ -200,6 +200,35 @@ class DownloadTests(unittest.TestCase):
                 self.error("MALFORMED_MESSAGE_MIME", lambda: self.save(message={**self.args["message"], "content_sha256": digest(raw)}))
                 self.error("MALFORMED_MESSAGE_MIME", self.fixture.read)
 
+    def test_legacy_encoded_filename_reads_and_exports_exact_bytes(self):
+        for encoding in ("b", "q"):
+            import base64
+            import quopri
+            filename = "Czynny_żal_Romański_Piotr.pdf"
+            encoded = (base64.b64encode(filename.encode()).decode() if encoding == "b"
+                       else quopri.encodestring(filename.encode()).decode().replace("_", "=5F").replace(" ", "_"))
+            word = f"=?utf-8?{encoding}?{encoded}?="
+            raw = (f'From: owner@example.test\r\nContent-Type: application/pdf; name="{word}"\r\n'
+                   f'Content-Disposition: attachment; filename="{word}"\r\n'
+                   'Content-Transfer-Encoding: base64\r\n\r\nJVBERi0xLjcA/w0K').encode()
+            self.fixture.save(raw)
+            result = self.fixture.read()
+            self.assertEqual(result["attachment_details"][0]["filename"], filename)
+            saved = self.service.attachment_save(**self.arguments(result))
+            self.assertEqual(Path(saved["path"]).read_bytes(), b"%PDF-1.7\x00\xff\r\n")
+            self.assertEqual(self.server.append_calls, 0)
+            self.assertEqual(self.server.smtp_connections, 0)
+
+    def test_legacy_filename_does_not_hide_other_mime_defects(self):
+        word = '=?utf-8?b?ZmlsZS5wZGY=?='
+        for extra in ('; filename="other.pdf"', '; size="unterminated',
+                      '; x-other="=?utf-8?b?YWJj?="'):
+            raw = (f'Content-Type: application/pdf\r\n'
+                   f'Content-Disposition: attachment; filename="{word}"{extra}\r\n'
+                   'Content-Transfer-Encoding: base64\r\n\r\nJVBERg==').encode()
+            self.fixture.save(raw)
+            self.error("MALFORMED_MESSAGE_MIME", self.fixture.read)
+
     def test_quoted_printable_and_empty_payload_preserve_exact_bytes(self):
         for raw, payload in (
             (b'Content-Type: text/csv\r\nContent-Disposition: attachment; filename="a.csv"\r\n'
