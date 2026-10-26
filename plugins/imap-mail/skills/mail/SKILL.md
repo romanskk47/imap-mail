@@ -52,3 +52,7 @@ Read only the details needed for the task:
 - [Configuration and deployment](../../README.md#private-configuration).
 
 Check `mail_read` completeness/truncation before concluding content is absent; full MIME is limited to 16 MiB. `attachments_read: false` means file contents were not interpreted. Check `attachment_manifest_complete` and `unsupported_parts` before concluding the attachment list is complete. Attached messages, delivery reports and multipart files can leave the parent readable while remaining unavailable for original-file export. If a requested function is missing from `mail_capabilities`, state the exact implementation gap and handle an authorized extension explicitly; do not silently switch clients or claim completion.
+
+## Recoverable Trash (UID MOVE extension)
+
+For explicitly requested deletion, set only the selected account's `trash_write: true` under authorized setup, then `mail_trash_preview(account, messages)` → review exact identities, subjects, senders, hashes and unique special-use destination → `mail_trash_apply(preview_id, preview_hash)`. CLI: `trash-preview --input request.json`, `trash-apply ID HASH`, `trash-status ID`. Maximum 100 references in one source mailbox per batch. UID MOVE is required; no COPY/EXPUNGE fallback, arbitrary destinations or permanent deletion. Only verified source absence plus identical MIME in Trash proves success. Recover an attempted/uncertain operation using the same ID; no fresh preview or blind retry. Trash retention is provider-managed.

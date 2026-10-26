@@ -163,6 +163,16 @@ TOOLS = [
          "Apply the exact flags preview ID/hash under the user's requested message change. Preserve all other flags and independently read back the result. Preflight-only concurrency is not atomic against other clients. An attempted/uncertain operation is reconciled, never blindly repeated. Only verified proves completion; never sends, moves or deletes messages.",
          obj({"preview_id": PREVIEW_ID, "preview_hash": PREVIEW_HASH}, ["preview_id", "preview_hash"]),
          read_only=False, destructive=True),
+    tool("mail_trash_preview", "Preview recoverable trash",
+         "Freeze exact messages and the unique special-use Trash. Requires separate trash_write authorization and server UID MOVE. No permanent deletion.",
+         obj({"account": ACCOUNT, "messages": {"type": "array", "items": REPLY, "minItems": 1, "maxItems": 100}}, ["account", "messages"]),
+         read_only=False, idempotent=False),
+    tool("mail_trash_apply", "Move reviewed messages to Trash",
+         "Apply exact ID/hash with UID MOVE only. An attempted operation is observed, never replayed. Verify source absence and identical MIME in Trash. Never EXPUNGE or permanently delete.",
+         obj({"preview_id": PREVIEW_ID, "preview_hash": PREVIEW_HASH}, ["preview_id", "preview_hash"]), read_only=False, destructive=True),
+    tool("mail_trash_status", "Observe the same trash operation",
+         "Read-only recovery; never replay MOVE or permanently delete.",
+         obj({"preview_id": PREVIEW_ID}, ["preview_id"])),
     tool("mail_flags_status", "Inspect the same flag operation without writes",
          "Read-only reconciliation of the same flags operation and exact message references. Never STORE, resend or replay an uncertain change. Conflict or uncertainty is not completion; only verified confirms every desired flag.",
          obj({"preview_id": PREVIEW_ID}, ["preview_id"])),
@@ -221,8 +231,8 @@ def validate(value: Any, schema: dict[str, Any], label: str = "arguments") -> No
 
 
 def make_service(config_path: str | None = None, state_dir: str | None = None) -> Any:
-    from .flags import FlagService
-    return FlagService(config_path=config_path, state_dir=state_dir)
+    from .trash import TrashService
+    return TrashService(config_path=config_path, state_dir=state_dir)
 
 
 def dispatch_tool(name: str, arguments: Any, *, service: Any = None) -> Any:
@@ -258,6 +268,7 @@ def dispatch_tool(name: str, arguments: Any, *, service: Any = None) -> Any:
                "mail_draft_edit_apply": "draft_edit_apply", "mail_draft_edit_status": "draft_edit_status",
                "mail_send_check": "send_check",
                "mail_send_preview": "send_preview", "mail_send_apply": "send_apply", "mail_send_status": "send_status",
+               "mail_trash_preview": "trash_preview", "mail_trash_apply": "trash_apply", "mail_trash_status": "trash_status",
                "mail_flags_preview": "flags_preview", "mail_flags_apply": "flags_apply", "mail_flags_status": "flags_status"}
     # Unexpected helper logging must never corrupt stdio JSON-RPC or expose credentials.
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
