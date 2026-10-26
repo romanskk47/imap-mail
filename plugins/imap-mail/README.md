@@ -1,4 +1,4 @@
-# IMAP Mail 0.7.3
+# IMAP Mail 0.7.4
 
 Agent-operated email for Codex and Claude Code: read IMAP mail, create/edit drafts, change read/star status, or send a specifically requested message over opt-in SMTP. One `mail` skill includes setup and recovery. Python 3.10+, standard library only; no Apple Mail, paid API, daemon or VPS required.
 
@@ -234,3 +234,5 @@ Automatic sorting belongs to Mailroom or another independent project. This plugi
 No dedicated forward, move/archive/trash or folder tools. These are implementation gaps, not a task whitelist. This is not a sorter or multiuser service.
 
 Version 0.7.3 strengthens MIME verification and write recovery, shares complete FETCH parsing, supports injected profiles during SMTP configuration, and isolates known per-account profile errors. Read receipts identify unsupported attachment containers explicitly. No real mail/accounts/secrets are packaged. [MIT](LICENSE).
+
+Version 0.7.4 accepts legacy RFC 2047 encoded words only in quoted display filename parameters during reads and original attachment exports. Ambiguous headers, broken boundaries and corrupt payloads remain rejected; write verification is unchanged.

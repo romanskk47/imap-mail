@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 import email
 from email import policy
+from email.errors import InvalidHeaderDefect
 import os
 from pathlib import Path
 import re
@@ -18,6 +19,30 @@ SHA256 = re.compile(r"[0-9a-f]{64}")
 # Only MIME types select a fixed suffix; sender filenames are metadata, never paths.
 SUFFIXES = {"application/pdf": ".pdf", "text/csv": ".csv", "image/png": ".png",
             "image/jpeg": ".jpg", "text/plain": ".txt"}
+
+
+def _readable_header(part, name, value):
+    defects = getattr(value, "defects", ())
+    if not defects:
+        return True
+    allowed = {"encoded word inside quoted string",
+               "missing trailing whitespace after encoded-word"}
+    if any(type(defect) is not InvalidHeaderDefect or str(defect) not in allowed
+           for defect in defects):
+        return False
+    parameter = {"Content-Type": "name", "Content-Disposition": "filename"}.get(name)
+    if parameter is None:
+        return False
+    raw = next(text for key, text in part.raw_items() if key.lower() == name.lower())
+    word = r"=\?[^?\s]+\?[bBqQ]\?[^?\r\n]*\?="
+    pattern = rf'(;\s*{parameter}\s*=\s*)"(?:{word})(?:\s*(?:{word}))*"'
+    checked, count = re.subn(pattern, r'\1"legacy-filename"', raw, flags=re.IGNORECASE)
+    if count != 1:
+        return False
+    # Only the display filename is substituted for validation. Boundary,
+    # charset, disposition and duplicate parameters must still parse strictly.
+    clean = email.message_from_string(f"{name}: {checked}\n\n", policy=policy.default)[name]
+    return not getattr(clean, "defects", ())
 
 
 @dataclass(frozen=True)
@@ -66,7 +91,7 @@ def parse_mime(raw):
         for index, part in enumerate(message.walk()):
             for name in ("Content-Type", "Content-Disposition", "Content-Transfer-Encoding"):
                 values = part.get_all(name, [])
-                if len(values) > 1 or any(getattr(value, "defects", ()) for value in values):
+                if len(values) > 1 or any(not _readable_header(part, name, value) for value in values):
                     raise ValueError("Ambiguous MIME header")
             encoding = str(part.get("Content-Transfer-Encoding", "7bit")).strip().lower()
             if encoding not in {"7bit", "8bit", "binary", "base64", "quoted-printable"}:
