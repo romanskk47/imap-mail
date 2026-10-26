@@ -113,7 +113,7 @@ class AttachmentInterfaceTests(unittest.TestCase):
         self.assertFalse(definition["annotations"]["readOnlyHint"])
         self.assertFalse(definition["annotations"]["destructiveHint"])
         self.assertFalse(definition["annotations"]["idempotentHint"])
-        self.assertEqual({"mail_draft_edit_apply", "mail_send_apply", "mail_flags_apply"}, {
+        self.assertEqual({"mail_draft_edit_apply", "mail_send_apply", "mail_flags_apply", "mail_trash_apply"}, {
             entry["name"] for entry in mcp.TOOLS if entry["annotations"]["destructiveHint"]})
         response = mcp.handle_request({"jsonrpc": "2.0", "method": "tools/call", "params": {
             "name": "mail_draft_attachment_preview", "arguments": self.preview}}, service=self.service)

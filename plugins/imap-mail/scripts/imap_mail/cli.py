@@ -91,6 +91,13 @@ def parser() -> argparse.ArgumentParser:
     flags_apply.add_argument("preview_hash")
     flags_status = commands.add_parser("flags-status", help="Inspect flag outcomes without writes")
     flags_status.add_argument("preview_id")
+    trash_preview = commands.add_parser("trash-preview", help="Preview exact messages for recoverable Trash")
+    trash_preview.add_argument("--input", "--request", dest="request", required=True)
+    trash_apply = commands.add_parser("trash-apply")
+    trash_apply.add_argument("preview_id")
+    trash_apply.add_argument("preview_hash")
+    trash_status = commands.add_parser("trash-status")
+    trash_status.add_argument("preview_id")
     return result
 
 
@@ -99,7 +106,7 @@ def request(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
     command = values.pop("command")
     values.pop("config")
     values.pop("state_dir")
-    if command in ("attachment-save", "draft-preview", "draft-edit-preview", "draft-attachment-preview", "send-preview", "flags-preview"):
+    if command in ("attachment-save", "draft-preview", "draft-edit-preview", "draft-attachment-preview", "send-preview", "flags-preview", "trash-preview"):
         path = Path(values["request"]).expanduser()
         if not path.is_file() or path.stat().st_size > 2 * 1024 * 1024:
             raise InvalidArguments("Request must be a JSON file no larger than 2 MiB")
@@ -114,12 +121,13 @@ def request(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
             body["response_view"] = response_view
         return {"attachment-save": "mail_attachment_save", "draft-preview": "mail_draft_preview", "draft-edit-preview": "mail_draft_edit_preview",
                 "draft-attachment-preview": "mail_draft_attachment_preview",
-                "send-preview": "mail_send_preview", "flags-preview": "mail_flags_preview"}[command], body
+                "send-preview": "mail_send_preview", "flags-preview": "mail_flags_preview", "trash-preview": "mail_trash_preview"}[command], body
     names = {"accounts": "mail_accounts", "capabilities": "mail_capabilities", "check": "mail_check", "folders": "mail_folders", "search": "mail_search",
              "read": "mail_read", "draft-apply": "mail_draft_apply", "draft-status": "mail_draft_status",
              "preview-read": "mail_preview_read",
              "draft-edit-apply": "mail_draft_edit_apply", "draft-edit-status": "mail_draft_edit_status",
              "send-configure": "mail_send_configure", "send-check": "mail_send_check", "send-apply": "mail_send_apply", "send-status": "mail_send_status",
+             "trash-apply": "mail_trash_apply", "trash-status": "mail_trash_status",
              "flags-apply": "mail_flags_apply", "flags-status": "mail_flags_status"}
     return names[command], {key: value for key, value in values.items() if value is not None}
 

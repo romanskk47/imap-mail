@@ -231,6 +231,8 @@ Automatic sorting belongs to Mailroom or another independent project. This plugi
 
 ## Limits and protocol references
 
-No dedicated forward, move/archive/trash or folder tools. These are implementation gaps, not a task whitelist. This is not a sorter or multiuser service.
+Recoverable Trash is available through `mail_trash_preview`, `mail_trash_apply`, `mail_trash_status` (CLI `trash-preview`, `trash-apply`, `trash-status`). Requires separate account `trash_write: true`, a unique special-use Trash, and server UID MOVE. Reviews at most 100 exact identities per source mailbox; independently checks source absence and identical MIME in Trash. Attempted MOVE is never replayed. No EXPUNGE or permanent deletion; provider retention applies.
+
+No dedicated forward, arbitrary move/archive or folder tools. These are implementation gaps, not a task whitelist. This is not a sorter or multiuser service.
 
 Version 0.7.3 strengthens MIME verification and write recovery, shares complete FETCH parsing, supports injected profiles during SMTP configuration, and isolates known per-account profile errors. Read receipts identify unsupported attachment containers explicitly. No real mail/accounts/secrets are packaged. [MIT](LICENSE).

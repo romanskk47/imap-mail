@@ -24,6 +24,7 @@ def _account_view(row):
         "drafts_enabled": row.get("drafts_enabled") is True,
         "send_enabled": row.get("send_enabled") is True,
         "flags_enabled": row.get("flags_enabled") is True,
+        "trash_enabled": row.get("trash_enabled") is True,
         "signature_configured": row.get("signature_configured") is True,
         "issues": list(row.get("issues", [])),
         "send_issues": list(row.get("send_issues", [])),
@@ -76,8 +77,11 @@ def capabilities(service, account=None):
             "add_or_normalize_draft_attachments": ["mail_draft_attachment_preview", "mail_draft_edit_apply", "mail_draft_edit_status"],
             "smtp_send": ["mail_send_preview", "mail_send_apply", "mail_send_status"],
             "message_flags": ["mail_flags_preview", "mail_flags_apply", "mail_flags_status"],
+            "recoverable_trash": ["mail_trash_preview", "mail_trash_apply", "mail_trash_status"],
         },
         "permissions": {
+            "recoverable_trash": {"configuration_key": "trash_write", "enabled_field": "trash_enabled",
+                                  "default": "disabled", "automatically_enabled": False},
             "message_flags": {"configuration_key": "flags_write", "enabled_field": "flags_enabled",
                               "default": "disabled", "automatically_enabled": False},
         },
@@ -98,6 +102,7 @@ def capabilities(service, account=None):
             "attachments": ["mail_read", "mail_draft_attachment_preview", "mail_draft_edit_apply"],
             "send": ["mail_send_check", "mail_send_preview", "mail_send_apply"],
             "flags": ["mail_flags_preview", "mail_flags_apply"],
+            "trash": ["mail_trash_preview", "mail_trash_apply", "mail_trash_status"],
             "recovery": {
                 "draft": "mail_draft_status",
                 "edit_or_attachments": "mail_draft_edit_status",
@@ -116,7 +121,7 @@ def capabilities(service, account=None):
         ],
         "not_implemented": [
             "forward", "move", "archive",
-            "trash", "folder_create_rename_delete", "oauth_mail_account_authentication",
+            "permanent_delete", "folder_create_rename_delete", "oauth_mail_account_authentication",
         ],
         "unknown_or_missing_operation": {
             "meaning": "An implementation gap is not a forbidden user request.",
