@@ -147,17 +147,19 @@ class TrashService(FlagService):
             with self._reader(profile) as reader:
                 if self._trash_destination(reader) != frozen["destination"]:
                     raise DraftError("TRASH_DESTINATION_CHANGED")
+                source = frozen["messages"][0]
+                validity, _ = reader.select(source["mailbox"])
+                if str(validity) != source["uidvalidity"]:
+                    raise DraftError("UIDVALIDITY_CHANGED")
+                source_uids = ",".join(m["uid"] for m in frozen["messages"])
+                status, rows = reader.client.uid("SEARCH", None, "UID", source_uids)
+                if status != "OK" or not rows or rows[0].split():
+                    raise DraftError("TRASH_SOURCE_ABSENCE_NOT_CONFIRMED")
+                dest = frozen["destination"]
+                validity, _ = reader.select(dest["mailbox"])
+                if str(validity) != dest["uidvalidity"]:
+                    raise DraftError("TRASH_DESTINATION_CHANGED")
                 for source in frozen["messages"]:
-                    validity, _ = reader.select(source["mailbox"])
-                    if str(validity) != source["uidvalidity"]:
-                        raise DraftError("UIDVALIDITY_CHANGED")
-                    status, rows = reader.client.uid("SEARCH", None, "UID", source["uid"])
-                    if status != "OK" or not rows or rows[0].split():
-                        raise DraftError("TRASH_SOURCE_ABSENCE_NOT_CONFIRMED")
-                    dest = frozen["destination"]
-                    validity, _ = reader.select(dest["mailbox"])
-                    if str(validity) != dest["uidvalidity"]:
-                        raise DraftError("TRASH_DESTINATION_CHANGED")
                     status, rows = reader.client.uid("SEARCH", None, "HEADER", "Message-ID",
                                                     reader.client._quote(source["message_id"]))
                     if status != "OK" or not rows:

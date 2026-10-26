@@ -26,7 +26,7 @@ class TrashReader(fixtures.FlagsReader):
             return 'OK', [b'moved']
         if command == 'SEARCH':
             if args[1] == 'UID':
-                ids = [args[2]] if args[2] in self.server.messages[self.mailbox] else []
+                ids = [uid for uid in args[2].split(',') if uid in self.server.messages[self.mailbox]]
             else:
                 needle = args[3].strip('"').encode()
                 ids = [u for u,b in self.server.messages[self.mailbox].items() if needle in b]
@@ -95,3 +95,24 @@ class TrashTests(unittest.TestCase):
         self.entry.pop('trash_write');self.save_config()
         r=self.service.trash_status(p['preview_id'])
         self.assertEqual(r['status'],'verified');self.assertEqual(self.server.moves,1)
+
+    def test_batch_checks_every_uid_and_keeps_source_selection_bounded(self):
+        refs=[self.ref,{**self.ref,'uid':'14'}]
+        p=self.service.trash_preview('one',refs)
+        r=self.apply(p)
+        self.assertEqual(r['status'],'verified')
+        self.assertEqual(len(r['receipt']['messages']),2)
+        self.assertEqual(set(self.server.messages['Trash']),{'13','14'})
+        self.assertFalse(self.server.messages['INBOX'])
+
+    def test_batch_partial_move_cannot_be_verified(self):
+        p=self.service.trash_preview('one',[self.ref,{**self.ref,'uid':'14'}])
+        raw=self.server.messages['INBOX'].pop('13')
+        self.server.messages['Trash']['13']=raw
+        from imap_mail.core import write_json
+        root=self.root/'state'/'trash'
+        path,record=self.service._trash_load(root,p['preview_id'])
+        record['attempted']=True
+        write_json(path,record)
+        self.assertEqual(self.service.trash_status(p['preview_id'])['status'],'uncertain')
+        self.assertEqual(self.server.moves,0)
