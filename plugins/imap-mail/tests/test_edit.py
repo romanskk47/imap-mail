@@ -11,6 +11,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from imap_mail.rendering import SMTP_POLICY
 from imap_mail.core import digest
 from imap_mail.edit import EditService
 import test_send as send_fixtures
@@ -112,7 +113,7 @@ class EditReader(send_fixtures.SendReader):
         if self.server.corrupt_saved:
             changed = email.message_from_bytes(raw, policy=policy.default)
             changed.get_body(("plain",)).set_content("Unauthorized changed body")
-            saved = changed.as_bytes(policy=policy.SMTP)
+            saved = changed.as_bytes(policy=SMTP_POLICY)
         else:
             saved = raw
         self.server.messages["Drafts"][uid] = saved
@@ -181,7 +182,7 @@ class EditTests(unittest.TestCase):
         return (self.root / "state" / (preview["preview_id"] + ".eml")).read_bytes()
 
     def message(self, body="Existing body", html=None, attachment=True):
-        message = EmailMessage(policy=policy.SMTP)
+        message = EmailMessage(policy=SMTP_POLICY)
         message["From"] = "Owner <owner@example.test>"
         message["To"] = "Recipient <recipient@example.test>"
         message["Cc"] = "copy@example.test"
@@ -407,7 +408,7 @@ class EditTests(unittest.TestCase):
             uid = next(uid for uid in self.server.messages["Drafts"] if uid != "13")
             changed = email.message_from_bytes(self.server.messages["Drafts"][uid], policy=policy.default)
             changed.get_body(("plain",)).set_content("Human changed replacement")
-            self.server.messages["Drafts"][uid] = changed.as_bytes(policy=policy.SMTP)
+            self.server.messages["Drafts"][uid] = changed.as_bytes(policy=SMTP_POLICY)
         self.server.after_store = change_replacement
         result = self.apply(preview)
         self.assertEqual(result["status"], "conflict")

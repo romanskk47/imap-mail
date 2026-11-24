@@ -10,6 +10,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from imap_mail.rendering import SMTP_POLICY
 from imap_mail.core import DraftError, digest, semantic, write_json
 import test_edit as fixture_module
 import test_core as draft_fixtures
@@ -26,7 +27,7 @@ class MimeMeaningTests(unittest.TestCase):
                                     ("delsp", "no", "yes"),
                                     ("x-display-mode", "one", "two")):
             with self.subTest(parameter=name):
-                message = EmailMessage(policy=policy.SMTP)
+                message = EmailMessage(policy=SMTP_POLICY)
                 message.set_content("First text\nSecond text")
                 message.set_param(name, first)
                 original = message.as_bytes()
@@ -34,7 +35,7 @@ class MimeMeaningTests(unittest.TestCase):
                 self.assertNotEqual(semantic(original), semantic(message.as_bytes()))
 
     def test_boundary_parameter_order_and_equivalent_charset_preserve_meaning(self):
-        message = EmailMessage(policy=policy.SMTP)
+        message = EmailMessage(policy=SMTP_POLICY)
         message.set_content("Equal ASCII text", charset="utf-8")
         utf8 = message.as_bytes()
         message.set_content("Equal ASCII text", charset="iso-8859-1")
@@ -85,7 +86,7 @@ class DraftMeaningTests(unittest.TestCase):
         fixture = self.fixture
         message = email.message_from_bytes(fixture.server.messages["Drafts"][uid], policy=policy.default)
         message.set_param("start", "<alternate@example.test>")
-        fixture.server.messages["Drafts"][uid] = message.as_bytes(policy=policy.SMTP)
+        fixture.server.messages["Drafts"][uid] = message.as_bytes(policy=SMTP_POLICY)
 
     def test_changed_related_root_never_retires_original(self):
         fixture = self.fixture
@@ -121,7 +122,7 @@ class DraftMeaningTests(unittest.TestCase):
                 def change_parameter(uid):
                     stored = email.message_from_bytes(fixture.server.messages["Drafts"][uid], policy=policy.default)
                     stored.set_param(name, after)
-                    fixture.server.messages["Drafts"][uid] = stored.as_bytes(policy=policy.SMTP)
+                    fixture.server.messages["Drafts"][uid] = stored.as_bytes(policy=SMTP_POLICY)
 
                 fixture.server.after_append = change_parameter
                 self.assertEqual(fixture.apply(preview)["status"], "conflict")

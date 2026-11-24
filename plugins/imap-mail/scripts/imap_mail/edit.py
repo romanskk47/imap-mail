@@ -16,6 +16,7 @@ import re
 import uuid
 
 from . import read_access
+from .rendering import SMTP_POLICY
 from .core import (DraftError, MAX_BODY, MAX_RAW, STABLE_ID, _HTMLTextEquivalence,
                    digest, private_read, profile_identity, public, semantic,
                    write_json, write_new)
@@ -244,7 +245,7 @@ class EditService(SendService):
         if not body_count:
             raise DraftError("DRAFT_EDIT_BODY_UNAVAILABLE")
         message.replace_header("Message-ID", make_msgid(domain=before["from"].rsplit("@", 1)[1]))
-        raw = message.as_bytes(policy=policy.SMTP)
+        raw = message.as_bytes(policy=SMTP_POLICY)
         if len(raw) > MAX_RAW:
             raise DraftError("DRAFT_TOO_LARGE")
         after = self._existing_mime(raw, entry)

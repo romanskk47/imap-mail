@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import patch
 
 import test_edit as fixture
+from imap_mail.rendering import SMTP_POLICY
 
 
 class EditAdversarialTests(unittest.TestCase):
@@ -42,7 +43,7 @@ class EditAdversarialTests(unittest.TestCase):
 
     def test_inline_image_without_filename_and_cid_survives_exactly(self):
         message = self.message("Existing body", "<p>Existing body</p><img src=\"cid:logo\">", False)
-        resource = EmailMessage(policy=policy.SMTP)
+        resource = EmailMessage(policy=SMTP_POLICY)
         resource.set_content(b"\x00\xff image bytes\r\n", maintype="image", subtype="png")
         resource["Content-ID"] = "<logo>"
         resource["Content-Disposition"] = "inline"

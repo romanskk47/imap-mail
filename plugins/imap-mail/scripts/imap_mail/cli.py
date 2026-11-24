@@ -91,6 +91,14 @@ def parser() -> argparse.ArgumentParser:
     flags_apply.add_argument("preview_hash")
     flags_status = commands.add_parser("flags-status", help="Inspect flag outcomes without writes")
     flags_status.add_argument("preview_id")
+    for prefix, label in (("move", "move to Trash/Archive/folder"), ("delete", "PERMANENT deletion from Trash/Drafts")):
+        item_preview = commands.add_parser(prefix + "-preview", help=f"Preview {label} without mailbox writes")
+        item_preview.add_argument("--input", "--request", dest="request", required=True)
+        item_apply = commands.add_parser(prefix + "-apply", help=f"Apply the same reviewed {label}")
+        item_apply.add_argument("preview_id")
+        item_apply.add_argument("preview_hash")
+        item_status = commands.add_parser(prefix + "-status", help=f"Inspect the same {label} without writes")
+        item_status.add_argument("preview_id")
     return result
 
 
@@ -99,7 +107,8 @@ def request(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
     command = values.pop("command")
     values.pop("config")
     values.pop("state_dir")
-    if command in ("attachment-save", "draft-preview", "draft-edit-preview", "draft-attachment-preview", "send-preview", "flags-preview"):
+    if command in ("attachment-save", "draft-preview", "draft-edit-preview", "draft-attachment-preview", "send-preview", "flags-preview",
+                   "move-preview", "delete-preview"):
         path = Path(values["request"]).expanduser()
         if not path.is_file() or path.stat().st_size > 2 * 1024 * 1024:
             raise InvalidArguments("Request must be a JSON file no larger than 2 MiB")
@@ -114,13 +123,16 @@ def request(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
             body["response_view"] = response_view
         return {"attachment-save": "mail_attachment_save", "draft-preview": "mail_draft_preview", "draft-edit-preview": "mail_draft_edit_preview",
                 "draft-attachment-preview": "mail_draft_attachment_preview",
-                "send-preview": "mail_send_preview", "flags-preview": "mail_flags_preview"}[command], body
+                "send-preview": "mail_send_preview", "flags-preview": "mail_flags_preview",
+                "move-preview": "mail_move_preview", "delete-preview": "mail_delete_preview"}[command], body
     names = {"accounts": "mail_accounts", "capabilities": "mail_capabilities", "check": "mail_check", "folders": "mail_folders", "search": "mail_search",
              "read": "mail_read", "draft-apply": "mail_draft_apply", "draft-status": "mail_draft_status",
              "preview-read": "mail_preview_read",
              "draft-edit-apply": "mail_draft_edit_apply", "draft-edit-status": "mail_draft_edit_status",
              "send-configure": "mail_send_configure", "send-check": "mail_send_check", "send-apply": "mail_send_apply", "send-status": "mail_send_status",
-             "flags-apply": "mail_flags_apply", "flags-status": "mail_flags_status"}
+             "flags-apply": "mail_flags_apply", "flags-status": "mail_flags_status",
+             "move-apply": "mail_move_apply", "move-status": "mail_move_status",
+             "delete-apply": "mail_delete_apply", "delete-status": "mail_delete_status"}
     return names[command], {key: value for key, value in values.items() if value is not None}
 
 
@@ -133,7 +145,7 @@ def main(argv: list[str] | None = None, *, service: Any = None) -> int:
         name, values = request(args)
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             current = service if service is not None else make_service(args.config, args.state_dir)
-            result = dispatch_tool(name, values, service=current)
+            result = dispatch_tool(name, values, service=current, default_view="full")
     except Exception as exc:
         print(json.dumps({"error": error_payload(exc)}, ensure_ascii=False, separators=(",", ":")))
         return 1

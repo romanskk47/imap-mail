@@ -19,6 +19,7 @@ import re
 from urllib.parse import unquote
 import uuid
 
+from .rendering import SMTP_POLICY
 from .core import (DraftError, MAX_RAW, MAX_ATTACHMENT, MAX_ATTACHMENT_TOTAL,
                    MAX_ATTACHMENTS, digest, header, profile_identity, public,
                    write_json, write_new)
@@ -223,7 +224,7 @@ class AttachmentService(EditService):
                 if part.get("Content-Disposition"):
                     del part["Content-Disposition"]
                 part.add_header("Content-Disposition", "attachment", filename=filename)
-        review = self._existing_mime(adjusted.as_bytes(policy=policy.SMTP), entry)
+        review = self._existing_mime(adjusted.as_bytes(policy=SMTP_POLICY), entry)
         for part, summary in zip(originals, review["mime_parts"]):
             if not part.is_multipart():
                 summary["disposition"] = part.get_content_disposition()
@@ -341,7 +342,7 @@ class AttachmentService(EditService):
             maintype, subtype = file["type"].split("/", 1)
             message.add_attachment(file["data"], maintype=maintype, subtype=subtype, filename=file["filename"])
         message.replace_header("Message-ID", make_msgid(domain=before["from"].rsplit("@", 1)[1]))
-        raw = message.as_bytes(policy=policy.SMTP)
+        raw = message.as_bytes(policy=SMTP_POLICY)
         if len(raw) > MAX_RAW:
             raise DraftError("DRAFT_TOO_LARGE")
         saved = email.message_from_bytes(raw, policy=policy.default)

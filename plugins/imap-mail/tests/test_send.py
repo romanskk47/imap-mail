@@ -16,6 +16,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from imap_mail.rendering import SMTP_POLICY
 from imap_mail.core import DraftError, DraftService, digest
 from imap_mail import send as send_module
 from imap_mail.send import SendService, smtp_factory
@@ -216,7 +217,7 @@ class SendTests(unittest.TestCase):
 
     def draft(self, raw=None):
         if raw is None:
-            message = EmailMessage(policy=policy.SMTP)
+            message = EmailMessage(policy=SMTP_POLICY)
             message["From"] = "Owner <owner@example.test>"
             message["To"] = "Recipient <recipient@example.test>"
             message["Cc"] = "copy@example.test"
@@ -573,8 +574,7 @@ class SendTests(unittest.TestCase):
         self.error("MESSAGE_TOO_LARGE_OR_INCOMPLETE", lambda: self.service.send_preview("one", draft=source))
 
     def test_nonascii_envelope_fails_before_mail_but_unicode_display_name_is_supported(self):
-        preview = self.preview(to=["Unicode name <recipient@exämple.test>"])
-        self.error("SMTPUTF8_NOT_SUPPORTED", lambda: self.apply(preview))
+        self.error("SMTPUTF8_NOT_SUPPORTED", lambda: self.preview(to=["Unicode name <recipient@exämple.test>"]))
         self.assertEqual(self.server.smtp_connections, 0)
         preview = self.preview(to=["Łukasz <recipient@example.test>"])
         self.assertEqual(self.apply(preview)["status"], "submission_accepted")
@@ -615,7 +615,7 @@ class SendTests(unittest.TestCase):
         source = self.draft()
         message = email.message_from_bytes(self.server.messages["Drafts"]["13"], policy=policy.default)
         message.get_body(preferencelist=("plain",)).set_content("Zażółć — istniejąca treść", cte="8bit")
-        raw = message.as_bytes(policy=policy.SMTP)
+        raw = message.as_bytes(policy=SMTP_POLICY)
         self.assertFalse(raw.isascii())
         self.draft(raw)
         preview = self.service.send_preview("one", draft=source)
@@ -630,10 +630,10 @@ class SendTests(unittest.TestCase):
     def test_second_visible_text_body_is_present_in_complete_mime_review(self):
         source = self.draft()
         message = email.message_from_bytes(self.server.messages["Drafts"]["13"], policy=policy.default)
-        extra = EmailMessage(policy=policy.SMTP)
+        extra = EmailMessage(policy=SMTP_POLICY)
         extra.set_content("Second recipient-visible body")
         message.attach(extra)
-        self.draft(message.as_bytes(policy=policy.SMTP))
+        self.draft(message.as_bytes(policy=SMTP_POLICY))
         preview = self.service.send_preview("one", draft=source)
         self.assertTrue(any("Second recipient-visible body" in part.get("content", "")
                             for part in preview["mime_parts"]))

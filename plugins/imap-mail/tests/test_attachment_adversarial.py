@@ -6,6 +6,7 @@ from email.message import EmailMessage
 import unittest
 
 import test_edit as fixture
+from imap_mail.rendering import SMTP_POLICY
 from imap_mail.attachments import AttachmentService, _normalize_html
 from imap_mail.core import DraftError, digest
 
@@ -28,7 +29,7 @@ class AttachmentAdversarialTests(unittest.TestCase):
                                  smtp_factory=self.server.smtp)
 
     def message(self, fragment=None):
-        message = EmailMessage(policy=policy.SMTP)
+        message = EmailMessage(policy=SMTP_POLICY)
         message["From"] = "Owner <owner@example.test>"
         message["To"] = "Recipient <recipient@example.test>"
         message["Cc"] = "copy@example.test"
@@ -44,12 +45,12 @@ class AttachmentAdversarialTests(unittest.TestCase):
                                 (placeholder if fragment is None else fragment), subtype="html")
         related = message.get_payload()[1]
         related.make_related()
-        document = EmailMessage(policy=policy.SMTP)
+        document = EmailMessage(policy=SMTP_POLICY)
         document.set_content(b"\x00 exact document\r\n\xff", maintype="application", subtype="pdf")
         document.add_header("Content-Disposition", "attachment", filename="ledger.pdf")
         document["Content-ID"] = "<document>"
         related.attach(document)
-        logo = EmailMessage(policy=policy.SMTP)
+        logo = EmailMessage(policy=SMTP_POLICY)
         logo.set_content(b"\x00 exact logo\r\n\xff", maintype="image", subtype="png")
         logo.add_header("Content-Disposition", "inline", filename="signature-logo.png")
         logo["Content-ID"] = "<logo>"
@@ -57,7 +58,7 @@ class AttachmentAdversarialTests(unittest.TestCase):
         return message
 
     def preview(self, message=None, attachments=None, **options):
-        source = self.draft((message or self.message()).as_bytes(policy=policy.SMTP))
+        source = self.draft((message or self.message()).as_bytes(policy=SMTP_POLICY))
         return self.service.draft_attachment_preview("one", source, attachments, **options)
 
     def assert_stopped_without_writes(self):

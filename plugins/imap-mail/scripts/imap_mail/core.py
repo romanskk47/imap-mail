@@ -26,6 +26,8 @@ import uuid
 
 from . import read_access
 from .fetch_response import FetchError, fetch_records, requested_fetch
+from .rendering import (QUOTE_STYLE, SMTP_POLICY, html_to_text, sanitize_quote_html,
+                        signature_overlap, text_to_html)
 
 
 MAX_RAW = 16 * 1024 * 1024
@@ -170,13 +172,25 @@ def text_part(message):
         if not isinstance(value, str) or len(value) > MAX_RAW:
             raise DraftError("SOURCE_CONTENT_UNAVAILABLE")
         if part.get_content_type() == "text/html":
-            value = re.sub(r"(?is)<(script|style)\b[^>]*>.*?</\1>", "", value)
-            value = html.unescape(re.sub(r"<[^>]*>", " ", value))
+            # Keep paragraphs, list items, links and <pre> code readable.
+            value = html_to_text(value)
         return value.replace("\r\n", "\n").replace("\r", "\n")
     except DraftError:
         raise
     except Exception:
         raise DraftError("SOURCE_CONTENT_UNAVAILABLE") from None
+
+
+def source_html(message):
+    """The source's own HTML body for quoting, or None when it has none."""
+    try:
+        part = message.get_body(preferencelist=("html",))
+        if part is None or part.get_content_type() != "text/html":
+            return None
+        value = part.get_content()
+        return value if isinstance(value, str) and len(value) <= MAX_RAW else None
+    except Exception:
+        return None
 
 
 class _HTMLTextEquivalence(HTMLParser):
@@ -738,34 +752,66 @@ class DraftService:
             original_subject = header(str(source_message.get("Subject", "")))
             if subject is None:
                 subject = original_subject if re.match(r"(?i)^re\s*:", original_subject) else "Re: " + original_subject
-            quote_headers = [f"{name}: {str(source_message[name])}" for name in ("Date", "From", "To", "Cc", "Subject") if source_message.get(name)]
-            quoted = "\n".join(["--- Original message ---", *quote_headers, "", text_part(source_message)])
+            quote_headers = ["--- Original message ---"] + [
+                f"{name}: {str(source_message[name])}" for name in ("Date", "From", "To", "Cc", "Subject")
+                if source_message.get(name)]
+            source_text = text_part(source_message)
+            quoted = "\n".join([*quote_headers, "", source_text])
+            # Quote the sender's own HTML (allowlisted, canonical) so links,
+            # lists and code blocks survive instead of a plain-text dump.
+            quoted_html = sanitize_quote_html(source_html(source_message) or "")
         recipients = addresses(to)
         copies = addresses(cc)
         seen = {a["address"].casefold() for a in recipients}
         copies = [a for a in copies if a["address"].casefold() not in seen]
         if not recipients:
             raise DraftError("RECIPIENT_REQUIRED")
+        # Internationalized addr-specs need SMTPUTF8/UTF8 headers, which this
+        # client does not produce. Fail at preview on every Python version.
+        if not all(a["address"].isascii() for a in recipients + copies):
+            raise DraftError("SMTPUTF8_NOT_SUPPORTED")
         subject = header(subject) if subject is not None else ""
         if not subject.strip():
             raise DraftError("SUBJECT_REQUIRED")
         authored = body_text.replace("\r\n", "\n").replace("\r", "\n").rstrip()
         plain_signature = signature["plain"]
-        # The adapter owns the new signature; a caller may already have included it.
+        overlap, warnings = [], []
+        # The adapter owns the new signature; a caller may already have included
+        # it whole, or only its opening ("Pozdrawiam,\nPiotr"). Never send both.
         if plain_signature:
             while authored.endswith(plain_signature):
                 authored = authored[:-len(plain_signature)].rstrip()
+            authored, overlap, warnings = signature_overlap(authored, plain_signature)
         signed_plain = authored + ("\n\n" + plain_signature if plain_signature else "")
-        signed_html = '<div style="white-space:pre-wrap">' + html.escape(authored) + "</div>"
+        # One block per line: mail editors drop CSS pre-wrap and merge lines.
+        signed_html = '<div class="imap-mail-body">' + text_to_html(authored) + "</div>"
         if signature["html"]:
-            signed_html += '<div class="imap-mail-signature">' + signature["html"] + "</div>"
+            signed_html += '<div><br></div><div class="imap-mail-signature">' + signature["html"] + "</div>"
+        quote = None
         if quoted:
+            quote = {"chars": len(quoted), "lines": len(quoted.splitlines()),
+                     "sha256": digest(quoted.encode("utf-8")), "rendered_offset": len(signed_plain) + 2}
             signed_plain += "\n\n" + "\n".join("> " + line for line in quoted.splitlines())
-            signed_html += '<blockquote style="white-space:pre-wrap">' + html.escape(quoted) + "</blockquote>"
+            header_html = "".join("<div>" + html.escape(line, quote=False) + "</div>" for line in quote_headers)
+            fallback = text_to_html(source_text)
+            quote_html = None
+            for candidate in ((quoted_html, fallback) if quoted_html else (fallback,)):
+                block = ('<div><br></div><blockquote type="cite" style="' + QUOTE_STYLE + '">' +
+                         header_html + "<div><br></div>" + candidate + "</blockquote>")
+                # Readback compares HTML text nodes; never quote markup that
+                # can only be compared byte-for-byte.
+                if _html_semantic_value(signed_html + block) != [("raw", signed_html + block)]:
+                    quote_html = block
+                    quote["format"] = "html" if candidate is quoted_html else "plain"
+                    break
+            if quote_html is None:
+                quote_html = ('<blockquote type="cite" style="white-space:pre-wrap">' +
+                              html.escape(quoted, quote=False) + "</blockquote>")
+                quote["format"] = "plain_preformatted"
+            signed_html += quote_html
         # RFC 2045 limits quoted-printable body lines to 76 characters, not
-        # SMTP policy's default 78. This is standards compliance, not an
-        # assertion that it resolves a particular native-client defect.
-        message = EmailMessage(policy=policy.SMTP.clone(max_line_length=76))
+        # SMTP policy's default 78. Headers use the MIME-safe folding policy.
+        message = EmailMessage(policy=SMTP_POLICY.clone(max_line_length=76))
         message["From"] = selected_from
         message["To"] = ", ".join(a["formatted"] for a in recipients)
         if copies:
@@ -805,6 +851,12 @@ class DraftService:
                   "attachments": [{k: v for k, v in item.items() if k not in ("data", "path")} for item in files],
                   "reply": source, "reply_all": reply_all, "message_id": str(message["Message-ID"]),
                   "drafts_mailbox": drafts_mailbox, "drafts_uidvalidity": drafts_validity}
+        if quote:
+            review["quote"] = quote
+        if overlap:
+            review["signature_overlap_removed"] = overlap
+        if warnings:
+            review["warnings"] = warnings
         immutable = {"preview_id": preview_id, "review": review, "mime_sha256": digest(raw),
                      "account_config_sha256": digest(entry)}
         preview_hash = digest(immutable)

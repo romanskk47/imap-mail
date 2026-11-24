@@ -7,12 +7,13 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from imap_mail.rendering import SMTP_POLICY
 from imap_mail.core import HTML_UTF8_META, semantic
 
 
 class HtmlTextEquivalenceTests(unittest.TestCase):
     def message(self, body, charset="utf-8", attachment=None, disposition=None):
-        message = EmailMessage(policy=policy.SMTP)
+        message = EmailMessage(policy=SMTP_POLICY)
         for name, value in (
             ("From", "owner@example.test"),
             ("To", "recipient@example.test"),
