@@ -81,6 +81,29 @@ def _same_link(text, href):
     return norm(text) == norm(href)
 
 
+_APPLE_ATTACHMENT_CLASS = re.compile(
+    r"""(\sclass\s*=\s*)(?:(["'])([^"']*)\2|()([^\s"'>]+))""", re.IGNORECASE)
+
+
+def strip_apple_attachment_markers(source):
+    """Remove Apple Mail's ``Apple-string-attachment`` class from markup.
+
+    Apple Mail treats an element with this class as a placeholder for its own
+    attachment store. When it reopens a draft from IMAP it cannot resolve the
+    placeholder and silently deletes the wrapped ``<img>``, so signature
+    images vanish on edit and on send. Plain ``<span><img src="cid:..."></span>``
+    survives editing and saving. Only that class token changes.
+    """
+    def clean(match):
+        quote = match[2] or '"'
+        value = match[3] if match[2] else match[5]
+        tokens = [t for t in value.split() if t.casefold() != "apple-string-attachment"]
+        if len(tokens) == len(value.split()):
+            return match[0]
+        return match[1] + quote + " ".join(tokens) + quote if tokens else ""
+    return _APPLE_ATTACHMENT_CLASS.sub(clean, source)
+
+
 class _TextRenderer(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)

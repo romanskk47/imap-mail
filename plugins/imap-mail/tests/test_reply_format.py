@@ -18,7 +18,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from imap_mail.core import _html_semantic_value, semantic
 from imap_mail.presentation import compact_review
-from imap_mail.rendering import (SMTP_POLICY, html_to_text, sanitize_quote_html,
+from imap_mail.rendering import (SMTP_POLICY, html_to_text, sanitize_quote_html, strip_apple_attachment_markers,
                                  signature_overlap, text_to_html)
 import test_core as fixtures
 
@@ -129,6 +129,22 @@ class MimeSafePolicyTests(unittest.TestCase):
         semantic(raw)
 
 
+class AppleAttachmentMarkerTests(unittest.TestCase):
+    """Apple Mail deletes <img> wrapped in span.Apple-string-attachment when it reopens a draft."""
+
+    def test_only_the_apple_marker_is_removed(self):
+        cases = {
+            '<span class="Apple-string-attachment"><img src="cid:a@local"></span>': '<span><img src="cid:a@local"></span>',
+            '<span class="x Apple-string-attachment y">': '<span class="x y">',
+            "<SPAN CLASS=Apple-string-attachment>": "<SPAN>",
+            "<span class='apple-string-attachment'>": "<span>",
+            '<p class="other">x</p>': '<p class="other">x</p>',
+            "<div class=other>": "<div class=other>",
+        }
+        for source, expected in cases.items():
+            self.assertEqual(expected, strip_apple_attachment_markers(source))
+
+
 class ReplyCompositionTests(unittest.TestCase):
     def setUp(self):
         fixture = fixtures.DraftServiceTests(methodName="runTest")
@@ -156,6 +172,23 @@ class ReplyCompositionTests(unittest.TestCase):
         plain.write_text(SIGNATURE, encoding="utf-8")
         self.entry["signature"] = {"plain": str(plain)}
         self.json(self.config_path, self.config)
+
+    def test_signature_images_drop_apple_marker_but_keep_cid_images(self):
+        plain = self.root / "signature.txt"
+        plain.write_text(SIGNATURE, encoding="utf-8")
+        rich = self.root / "signature.html"
+        rich.write_text('<div>Pozdrawiam,</div><table><tr><td><span class="Apple-string-attachment">'
+                        '<img src="cid:avatar@local" width="75"></span></td></tr></table>', encoding="utf-8")
+        logo = self.root / "avatar.png"
+        logo.write_bytes(b"synthetic image bytes")
+        self.entry["signature"] = {"plain": str(plain), "html": str(rich), "inline": {"avatar@local": str(logo)}}
+        self.json(self.config_path, self.config)
+        preview = self.preview(body_text="Treść testowa.")
+        html = self.mime(preview).get_body(preferencelist=("html",)).get_content()
+        self.assertNotIn("Apple-string-attachment", html)
+        self.assertIn('<span><img src="cid:avatar@local" width="75"></span>', html)
+        self.assertTrue(any(str(p.get("Content-ID")) == "<avatar@local>" for p in self.mime(preview).walk()))
+        self.assertEqual("verified", self.apply(preview)["status"])
 
     def test_reply_keeps_one_signature_paragraphs_links_and_code(self):
         self.signed()

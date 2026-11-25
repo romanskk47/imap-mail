@@ -27,7 +27,7 @@ import uuid
 from . import read_access
 from .fetch_response import FetchError, fetch_records, requested_fetch
 from .rendering import (QUOTE_STYLE, SMTP_POLICY, html_to_text, sanitize_quote_html,
-                        signature_overlap, text_to_html)
+                        signature_overlap, strip_apple_attachment_markers, text_to_html)
 
 
 MAX_RAW = 16 * 1024 * 1024
@@ -669,7 +669,7 @@ class DraftService:
             raise DraftError("INVALID_SIGNATURE")
         if config.get("html"):
             _, rich = self._file(config["html"], MAX_SIGNATURE)
-            rich = rich.decode("utf-8").strip()
+            rich = strip_apple_attachment_markers(rich.decode("utf-8").strip())
         else:
             rich = html.escape(plain).replace("\n", "<br>\n")
         inline = config.get("inline", {})

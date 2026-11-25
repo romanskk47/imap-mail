@@ -2,7 +2,7 @@
 
 One plugin and one `mail` skill for email in Codex and Claude Code. Search and read through IMAP, compose or edit drafts, change read/star status, move messages to Trash/Archive/a folder, permanently delete from Trash or Drafts, and send requested messages through opt-in SMTP. It runs directly on a configured Mac, Linux host or cloud runtime.
 
-Version **0.8.0** adds reviewed move (Trash, Archive, named folder) and permanent deletion, fixes reply formatting (single signature, paragraph-preserving HTML, sanitized HTML quote with links and code) and Python 3.15 MIME header folding, and makes review previews compact by default. The package uses Python 3.10+ and the standard library.
+Version **0.8.1** keeps signature images when a draft is reopened in Apple Mail. Version 0.8.0 added reviewed move (Trash, Archive, named folder) and permanent deletion, fixes reply formatting (single signature, paragraph-preserving HTML, sanitized HTML quote with links and code) and Python 3.15 MIME header folding, and makes review previews compact by default. The package uses Python 3.10+ and the standard library.
 
 ## Install
 
