@@ -1,4 +1,4 @@
-# IMAP Mail 0.8.0
+# IMAP Mail 0.8.1
 
 Agent-operated email for Codex and Claude Code: read IMAP mail, create/edit drafts, change read/star status, or send a specifically requested message over opt-in SMTP. One `mail` skill includes setup and recovery. Python 3.10+, standard library only; no Apple Mail, paid API, daemon or VPS required.
 
@@ -246,3 +246,5 @@ Version 0.7.3 strengthens MIME verification and write recovery, shares complete 
 Version 0.7.4 accepts legacy RFC 2047 encoded words only in quoted display filename parameters during reads and original attachment exports. Ambiguous headers, broken boundaries and corrupt payloads remain rejected; write verification is unchanged.
 
 Version 0.8.0 adds reviewed move/trash/archive and permanent deletion. Replies add the configured signature once (removing an identical closing already typed), keep paragraphs as separate HTML blocks so Apple Mail edits keep line breaks, quote the sender's sanitized HTML with links and code blocks, and warn when a typed closing may repeat the signature. HTML-only mail is read as structured text. MIME headers are folded safely on Python 3.15, and recipients needing SMTPUTF8 are refused at preview.
+
+Version 0.8.1 removes Apple Mail's `Apple-string-attachment` class from configured signature HTML. Apple Mail deletes `<img>` elements wrapped in that class when it reopens a draft from IMAP, so signature images disappeared on edit and send. Images and their CID parts are unchanged.
