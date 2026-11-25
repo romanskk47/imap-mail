@@ -21,6 +21,7 @@ import uuid
 from . import read_access
 from .fetch_response import FetchError, fetch_records, requested_fetch
 from .download import attachment_save, parse_mime
+from .rendering import SMTP_POLICY, html_to_text
 from .core import (DraftError, DraftService, MESSAGE_ID, MAX_RAW, MAX_BODY, STABLE_ID,
                    addresses, bare_address, digest, header, profile_identity,
                    public, semantic, text_part, write_json, write_new)
@@ -110,9 +111,8 @@ class SendService(DraftService):
                     raise ValueError("Undecodable MIME text")
                 candidate = candidate.replace("\r\n", "\n").replace("\r", "\n")
                 if subtype == "html":
-                    candidate = re.sub(r"(?is)<(script|style)\b[^>]*>.*?</\1>", "", candidate)
-                    candidate = html.unescape(re.sub(r"<[^>]*>", " ", candidate))
-                    candidate = re.sub(r"\s+", " ", candidate).strip()
+                    # Keep line breaks, lists, link targets and <pre> code.
+                    candidate = html_to_text(candidate)
                 if candidate.strip():
                     body, body_type = candidate, part.get_content_type()
                     break
@@ -457,7 +457,7 @@ class SendService(DraftService):
                 # Generate transport-safe new MIME before freezing it. Existing
                 # drafts remain byte-for-byte unchanged and negotiate 8BITMIME.
                 raw = email.message_from_bytes(raw, policy=policy.default).as_bytes(
-                    policy=policy.SMTP.clone(cte_type="7bit"))
+                    policy=SMTP_POLICY.clone(cte_type="7bit"))
                 fd, temporary = tempfile.mkstemp(prefix=".send-mime-", dir=root)
                 try:
                     with os.fdopen(fd, "wb") as stream:

@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from imap_mail.rendering import SMTP_POLICY
 from imap_mail.core import DraftError, digest
 from imap_mail.edit import EditService
 from imap_mail import send as send_module
@@ -35,7 +36,7 @@ class FullReadTests(unittest.TestCase):
             smtp_factory=lambda *args: self.fail("Reading must not connect to SMTP"))
 
     def message(self, *, plain="Read-only message", html=None, files=None, inline=False):
-        message = EmailMessage(policy=policy.SMTP)
+        message = EmailMessage(policy=SMTP_POLICY)
         message["From"] = "Owner <owner@example.test>"
         message["To"] = "Recipient <recipient@example.test>"
         message["Cc"] = "copy@example.test"
@@ -75,7 +76,7 @@ class FullReadTests(unittest.TestCase):
                                      files=files))
         self.assertGreater(len(raw), 2 * 1024 * 1024)
         result = self.read()
-        self.assertEqual(result["body"], "First corrected sentence. Second corrected sentence.")
+        self.assertEqual(result["body"], "First corrected sentence.\n\nSecond corrected sentence.")
         self.assertEqual(result["body_type"], "text/html")
         self.assertTrue(result["mime_complete"])
         self.assertTrue(result["attachment_manifest_complete"])

@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import patch
 
 import test_send as fixtures
+from imap_mail.rendering import SMTP_POLICY
 from imap_mail.core import DraftService
 
 
@@ -41,7 +42,7 @@ class CcWorkflowTests(unittest.TestCase):
                 if row[0] == "RCPT"]
 
     def source(self, *, reply_to=True):
-        message = EmailMessage(policy=policy.SMTP)
+        message = EmailMessage(policy=SMTP_POLICY)
         message["From"] = "Customer <customer@example.test>"
         if reply_to:
             message["Reply-To"] = "Support <support@example.test>"

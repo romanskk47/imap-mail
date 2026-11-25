@@ -136,9 +136,12 @@ class CapabilitiesTests(unittest.TestCase):
 
     def test_real_gaps_are_not_called_forbidden(self):
         result = capabilities(FakeService([]))
-        self.assertEqual({"forward", "move",
-                          "archive", "trash", "folder_create_rename_delete",
+        self.assertEqual({"forward", "folder_create_rename_delete",
                           "oauth_mail_account_authentication"}, set(result["not_implemented"]))
+        self.assertEqual("move_write", result["permissions"]["move_trash_archive_folder"]["configuration_key"])
+        self.assertEqual("expunge_write", result["permissions"]["permanent_delete"]["configuration_key"])
+        for permission in result["permissions"].values():
+            self.assertEqual("disabled", permission["default"])
         self.assertIn("not a forbidden", result["unknown_or_missing_operation"]["meaning"])
         transports = result["transports"]
         self.assertEqual(["local_mcp_stdio", "local_cli"], transports["implemented"])

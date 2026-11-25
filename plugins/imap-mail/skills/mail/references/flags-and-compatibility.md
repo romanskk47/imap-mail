@@ -36,3 +36,13 @@ A reported case opens the files in webmail and in the iPhone's Sent message, yet
 Ordinary top-level attachments, a clean recreated draft, and server hash checks have not demonstrated a cure for that case. Do not repeat normalization as a confirmed fix or claim the plugin is client-compatible because offline tests pass. Do not advise saving/sending a partial message after “create anyway”.
 
 Diagnose with scoped comparisons: exact source message, opening the file versus adding it to a composer, manual insertion of a saved test file, provider/client versions, and protocol logs when available. Preserve working account settings and correspondence. A destructive account reset, public issue containing private mail, another live test message or a provider configuration change requires its own appropriate scope; none follows merely from finding a client bug.
+
+## Trash, archive, move and permanent deletion
+
+Moves require `move_write: true` and permanent deletion `expunge_write: true` on the selected account; both are off by default and independent of `flags_write`. Enable only the account the person authorized.
+
+`mail_move_preview` takes up to 50 references from one mailbox and `destination: "trash" | "archive" | "folder"` (`folder` names an existing folder). It freezes content hashes, the resolved destination and its UIDVALIDITY. Apply writes a durable journal before every command, uses UID MOVE (or COPY, `\Deleted` and UID EXPUNGE of that UID only with UIDPLUS) and then verifies in a separate read-only session. `verified` returns the new destination reference. A move to Trash is the default way to remove mail and is recoverable.
+
+`mail_delete_preview` is refused outside the recognized Trash and Drafts (where `\Draft` is required). A private backup `<preview_id>.<uid>.original.eml` is written before apply. Deletion is permanent on the server.
+
+`uncertain` or `conflict` is resolved with the same status tool, never a new preview: an attempted operation blocks new move/delete previews of the same message. Typical codes: `MOVE_NOT_AUTHORIZED`, `DELETE_NOT_AUTHORIZED`, `TRASH_FOLDER_UNAVAILABLE` / `_AMBIGUOUS` (set `trash_mailbox`), `MOVE_REQUIRES_MOVE_OR_UIDPLUS`, `MOVE_SOURCE_CHANGED`, `DELETE_ONLY_FROM_TRASH_OR_DRAFTS`.

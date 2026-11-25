@@ -21,8 +21,10 @@ import sys
 
 if __package__:
     from .fetch_response import FetchError, fetch_records, requested_fetch
+    from .rendering import html_to_text
 else:
     from fetch_response import FetchError, fetch_records, requested_fetch
+    from rendering import html_to_text
 
 MAX_BYTES = 2097152
 MAX_PROFILE_BYTES = 1024 * 1024
@@ -332,9 +334,7 @@ class Reader:
             if not isinstance(body, str):
                 body = ''
             if part and part.get_content_type() == 'text/html':
-                body = re.sub(r'(?is)<(script|style)\b[^>]*>.*?</\1>', '', body)
-                body = html.unescape(re.sub(r'<[^>]*>', ' ', body))
-                body = re.sub(r'\s+', ' ', body).strip()
+                body = html_to_text(body)
             truncated = len(raw)>=MAX_BYTES
             # Some servers report a stale stored RFC822.SIZE after MIME conversion.
             # Verify EOF with a one-byte PEEK instead of treating every such mail as cut off.

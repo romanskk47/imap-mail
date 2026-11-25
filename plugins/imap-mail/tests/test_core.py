@@ -13,6 +13,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from imap_mail.rendering import SMTP_POLICY
 from imap_mail.core import DraftError, DraftService, digest, semantic
 from imap_mail import read_access
 
@@ -149,7 +150,7 @@ class DraftServiceTests(unittest.TestCase):
         self.assertEqual(str(raised.exception), code)
 
     def source(self, body="Original body", attachments=False):
-        message = EmailMessage(policy=policy.SMTP)
+        message = EmailMessage(policy=SMTP_POLICY)
         message["From"] = "Customer <customer@example.test>"
         message["Reply-To"] = "Support <support@example.test>"
         message["To"] = "owner@example.test, colleague@example.test"

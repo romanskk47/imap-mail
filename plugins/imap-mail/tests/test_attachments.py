@@ -10,6 +10,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from imap_mail.attachments import AttachmentService
+from imap_mail.rendering import SMTP_POLICY
 from imap_mail.core import DraftError, digest
 import test_edit as edit_fixtures
 import test_send as send_fixtures
@@ -53,7 +54,7 @@ class AttachmentTests(unittest.TestCase):
             message["X-Apple-Notify-Thread"] = "NO"
             message["X-Apple-Message-Smime-Encrypt"] = "NO"
         message.make_alternative()
-        related = EmailMessage(policy=policy.SMTP)
+        related = EmailMessage(policy=SMTP_POLICY)
         related.set_content('<html><body><p>Existing body and corrected wording.</p>'
                             '<b>Existing signature</b><img src="cid:signature-image">'
                             '<blockquote>Quoted prior message</blockquote>' + extra_html +
@@ -66,12 +67,12 @@ class AttachmentTests(unittest.TestCase):
                 ("analysis.pdf", "application/pdf", "pdf-cid", b"%PDF exact original\r\n"),
                 ("analysis.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx-cid", b"PK\x03\x04 exact sheet\r\n")):
             maintype, subtype = content_type.split("/", 1)
-            document = EmailMessage(policy=policy.SMTP)
+            document = EmailMessage(policy=SMTP_POLICY)
             document.set_content(data, maintype=maintype, subtype=subtype)
             document.add_header("Content-Disposition", "inline" if inline_documents else "attachment", filename=name)
             document["Content-ID"] = "<" + cid + ">"
             related.attach(document)
-        image = EmailMessage(policy=policy.SMTP)
+        image = EmailMessage(policy=SMTP_POLICY)
         image.set_content(b"\x89PNG exact image bytes\r\n", maintype="image", subtype="png")
         image.add_header("Content-Disposition", "inline", filename="signature.png")
         image["Content-ID"] = "<signature-image>"

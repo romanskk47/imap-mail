@@ -60,7 +60,7 @@ class PresentationTests(unittest.TestCase):
         self.assertIn("Owner", compact["signature"]["html"])
         self.assertEqual(len(compact["signature"]["plain_sha256"]), 64)
 
-    def test_mcp_legacy_full_default_and_compact_json_channels(self):
+    def test_mcp_compact_default_and_explicit_full_json_channels(self):
         full = self.sample()
         calls = []
         class Service:
@@ -70,12 +70,15 @@ class PresentationTests(unittest.TestCase):
         def invoke(extra):
             return mcp.handle_request({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
                 "params": {"name": "mail_draft_preview", "arguments": {"account": "one", "body_text": "Authored", **extra}}}, service=Service())["result"]
-        legacy = invoke({})
-        self.assertEqual(legacy["structuredContent"], full)
+        explicit_full = invoke({"response_view": "full"})
+        self.assertEqual(explicit_full["structuredContent"], full)
+        default = invoke({})
         compact = invoke({"response_view": "compact"})
         self.assertFalse(compact["isError"])
+        self.assertEqual(default["structuredContent"], compact["structuredContent"])
+        self.assertEqual(compact["structuredContent"]["response_view"], "compact")
         self.assertEqual(json.loads(compact["content"][0]["text"]), compact["structuredContent"])
-        self.assertEqual(calls, [{"account": "one", "body_text": "Authored"}] * 2)
+        self.assertEqual(calls, [{"account": "one", "body_text": "Authored"}] * 3)
         self.assertEqual(compact["structuredContent"]["preview_hash"], full["preview_hash"])
 
 
