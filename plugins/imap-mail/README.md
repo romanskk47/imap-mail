@@ -1,4 +1,4 @@
-# IMAP Mail 0.7.4
+# IMAP Mail 0.8.0
 
 Agent-operated email for Codex and Claude Code: read IMAP mail, create/edit drafts, change read/star status, or send a specifically requested message over opt-in SMTP. One `mail` skill includes setup and recovery. Python 3.10+, standard library only; no Apple Mail, paid API, daemon or VPS required.
 
@@ -107,6 +107,8 @@ The stored account setting is `send_enabled: true` plus:
 | `mail_attachment_save` | Save one hash-pinned original attachment under private host-local plugin state |
 | `mail_preview_read` | Re-read the same frozen message preview in full or compact form |
 | `mail_flags_preview`, `mail_flags_apply`, `mail_flags_status` | Review, apply and reconcile exact read/star changes |
+| `mail_move_preview`, `mail_move_apply`, `mail_move_status` | Move exact messages to Trash, Archive or a named folder |
+| `mail_delete_preview`, `mail_delete_apply`, `mail_delete_status` | Permanently delete from Trash, or unsent drafts from Drafts |
 | `mail_draft_preview`, `mail_draft_apply`, `mail_draft_status` | Freeze, save and verify an unsent draft |
 | `mail_draft_edit_preview` | Preview literal text replacements in a current draft |
 | `mail_draft_attachment_preview` | Preview requested local additions / ordinary-attachment normalization |
@@ -129,7 +131,7 @@ A new message supplies `to` / `subject`; a reply supplies `reply`. Optional: `fr
 
 A wording question stays a preview; draft/edit requests stay unsent. Explicit send intent permits agent review/submission without redundant confirmation. Ask only for missing consequential choices.
 
-Prefer `response_view: "compact"` for message previews to retain complete review bodies and hashes without repeated MIME payloads. `mail_preview_read` can retrieve the same preview in full. Presentation never changes its ID/hash.
+Draft, edit and send previews are compact by default: the new text, signature and recipients stay complete, while the quoted original is reduced to an excerpt with hashes and an edit's `before` body to hashes. Pass `response_view: "full"` or use `mail_preview_read` to see everything. Presentation never changes its ID/hash.
 
 ### Save an original attachment
 
@@ -166,6 +168,12 @@ Both return `operation: draft_edit` for edit apply/status. Editing backs up orig
 ### Read/unread and stars
 
 Set the selected account's `flags_write: true` only under authorized configuration. Preview exact message references with explicit boolean `seen` / `flagged` target values, then review and apply the same ID/hash. Other flags remain intact. Reconcile uncertain operations with `mail_flags_status`; do not replay blindly. See [flag details](skills/mail/references/flags-and-compatibility.md).
+
+### Trash, archive, move and permanent deletion
+
+Moves need `move_write: true` on the selected account; permanent deletion separately needs `expunge_write: true`. Both are off by default. `mail_move_preview(account, messages, destination)` takes up to 50 references from one source mailbox and `destination` `trash`, `archive` or `folder` (with `folder`). Trash/Archive are resolved from SPECIAL-USE flags or the account's `trash_mailbox` / `archive_mailbox`. The server needs MOVE, or UIDPLUS for COPY + flag + UID EXPUNGE of only the moved UIDs; Gmail requires MOVE. Apply the exact ID/hash; `verified` means an independent read found the source gone and exactly one matching copy in the destination, recoverable from there.
+
+`mail_delete_preview(account, messages)` accepts only messages in the recognized Trash, or `\Draft` messages in Drafts. It keeps a private backup of each original before `mail_delete_apply` flags and expunges that exact UID. This cannot be undone on the server. Move other mail to Trash first. Use the matching status tool after any uncertainty; an attempted move/delete is never replayed and blocks new operations on the same message until resolved.
 
 ### Sending
 
@@ -231,8 +239,10 @@ Automatic sorting belongs to Mailroom or another independent project. This plugi
 
 ## Limits and protocol references
 
-No dedicated forward, move/archive/trash or folder tools. These are implementation gaps, not a task whitelist. This is not a sorter or multiuser service.
+No dedicated forward or folder create/rename/delete tools. These are implementation gaps, not a task whitelist. This is not a sorter or multiuser service.
 
 Version 0.7.3 strengthens MIME verification and write recovery, shares complete FETCH parsing, supports injected profiles during SMTP configuration, and isolates known per-account profile errors. Read receipts identify unsupported attachment containers explicitly. No real mail/accounts/secrets are packaged. [MIT](LICENSE).
 
 Version 0.7.4 accepts legacy RFC 2047 encoded words only in quoted display filename parameters during reads and original attachment exports. Ambiguous headers, broken boundaries and corrupt payloads remain rejected; write verification is unchanged.
+
+Version 0.8.0 adds reviewed move/trash/archive and permanent deletion. Replies add the configured signature once (removing an identical closing already typed), keep paragraphs as separate HTML blocks so Apple Mail edits keep line breaks, quote the sender's sanitized HTML with links and code blocks, and warn when a typed closing may repeat the signature. HTML-only mail is read as structured text. MIME headers are folded safely on Python 3.15, and recipients needing SMTPUTF8 are refused at preview.

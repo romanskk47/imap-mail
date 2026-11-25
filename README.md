@@ -1,8 +1,8 @@
 # IMAP Mail
 
-One plugin and one `mail` skill for email in Codex and Claude Code. Search and read through IMAP, compose or edit drafts, change read/star status, and send requested messages through opt-in SMTP. It runs directly on a configured Mac, Linux host or cloud runtime.
+One plugin and one `mail` skill for email in Codex and Claude Code. Search and read through IMAP, compose or edit drafts, change read/star status, move messages to Trash/Archive/a folder, permanently delete from Trash or Drafts, and send requested messages through opt-in SMTP. It runs directly on a configured Mac, Linux host or cloud runtime.
 
-Version **0.7.4** reads and exports legacy encoded attachment filenames used by mail clients, including Polish filenames. MIME structure, transfer encoding and attachment bytes remain strictly checked. The package uses Python 3.10+ and the standard library.
+Version **0.8.0** adds reviewed move (Trash, Archive, named folder) and permanent deletion, fixes reply formatting (single signature, paragraph-preserving HTML, sanitized HTML quote with links and code) and Python 3.15 MIME header folding, and makes review previews compact by default. The package uses Python 3.10+ and the standard library.
 
 ## Install
 
@@ -43,7 +43,7 @@ Mailroom or another automatic sorter remains an independent service with its own
 | Configure SMTP | Reuse the exact account's credential after explicit setup authorization; no test mail |
 | Send | Explicit message request, frozen review, submission journal and separate Sent-copy verification |
 
-Forward, move/archive/trash, folder management and OAuth provider authentication are not implemented as dedicated operations. `mail_capabilities` reports these gaps so the agent can explain the actual limitation when relevant.
+Forward, folder create/rename/delete and OAuth provider authentication are not implemented as dedicated operations. `mail_capabilities` reports these gaps so the agent can explain the actual limitation when relevant.
 
 A wording request stays a preview; a draft stays unsent. Only the user's send instruction authorizes submitting that message. SMTP acceptance is not proof of delivery. Uncertain writes use their existing operation journal, never blind retries.
 
