@@ -33,6 +33,7 @@ class MailServer:
         self.refuse = None           # e.g. "MOVE": return NO without mutating
         self.no_copyuid = False
         self.ignore = None           # e.g. "EXPUNGE": OK without effect
+        self.empty_search_untagged = True  # servers may omit "* SEARCH" when empty
 
     def add(self, mailbox, subject, message_id, flags=()):
         uid = str(self.next_uid[mailbox])
@@ -101,12 +102,21 @@ class FakeReader:
             flags = " ".join(server.flags[(box, uid)])
             return "OK", [(f"1 (UID {uid} RFC822.SIZE {len(data)} FLAGS ({flags}) BODY[] {{{len(data)}}}".encode(), data), b")"]
         if command == "SEARCH":
-            if args[1] == "UID":
-                return "OK", [(" ".join(u for u in server.messages[box] if u == args[2])).encode()]
-            assert args[1:3] == ("HEADER", "Message-ID")
-            wanted = args[3][1:-1]
-            return "OK", [(" ".join(u for u, d in server.messages[box].items()
-                                    if f"Message-ID: {wanted}\r\n".encode() in d)).encode()]
+            result = self._search(args)
+            return ("OK", [None]) if server.empty_search_untagged and result[1] == [b""] else result
+        return self._write(command, args)
+
+    def _search(self, args):
+        server, box = self.server, self.mailbox
+        if args[1] == "UID":
+            return "OK", [(" ".join(u for u in server.messages[box] if u == args[2])).encode()]
+        assert args[1:3] == ("HEADER", "Message-ID")
+        wanted = args[3][1:-1]
+        return "OK", [(" ".join(u for u, d in server.messages[box].items()
+                                if f"Message-ID: {wanted}\r\n".encode() in d)).encode()]
+
+    def _write(self, command, args):
+        server, box = self.server, self.mailbox
         if self.is_readonly:
             raise AssertionError("Mutation on a read-only selection")
         uid = str(args[0])
@@ -122,10 +132,10 @@ class FakeReader:
                 code = f"{server.validity[target]} {uid} {new}".encode()
                 if command == "MOVE":
                     del server.messages[box][uid]
-                    if not server.no_copyuid:
-                        self.untagged["COPYUID"] = [code]
-                elif not server.no_copyuid:
-                    result = "OK", [b"[COPYUID " + code + b"] Copy completed"]
+                if not server.no_copyuid:
+                    # imaplib exposes tagged and untagged COPYUID via response().
+                    self.untagged["COPYUID"] = [code]
+                result = "OK", [None]
             elif command == "STORE":
                 assert args[1:] == ("+FLAGS.SILENT", "(\\Deleted)")
                 server.flags[(box, uid)].append("\\Deleted")
@@ -240,19 +250,59 @@ class MailboxTests(unittest.TestCase):
         self.server.no_copyuid = True
         ref = self.server.add("INBOX", "ignored", "<ign@example.test>")
         preview, result = self.move([ref])
-        self.assertEqual(("uncertain", "MOVE_NOT_CONFIRMED"), (result["status"], result["error_code"]))
+        self.assertEqual(("uncertain", "MOVE_NOT_APPLIED"), (result["status"], result["error_code"]))
         self.assertEqual("uncertain", self.service.move_apply(preview["preview_id"], preview["preview_hash"])["status"])
         self.assertEqual(1, len(self.server.writes))
-        # An unresolved attempt blocks any new operation on the same message.
+
+    def test_partial_effect_blocks_new_operations_until_resolved(self):
+        self.make(capabilities=("IMAP4rev1", "UIDPLUS"))
+        self.server.no_copyuid = True
+        ref = self.server.add("INBOX", "partial", "<pa@example.test>")
+        self.move([ref])  # COPY happened, source kept: a human must resolve the duplicate.
         self.error("MAILBOX_SOURCE_OPERATION_UNRESOLVED", lambda: self.service.move_preview("one", [ref], "archive"))
 
-    def test_refused_command_before_effect_is_uncertain_not_retried(self):
+    def test_refused_command_is_not_applied_and_does_not_block_a_new_preview(self):
         self.server.refuse = "MOVE"
         ref = self.server.add("INBOX", "refused", "<r@example.test>")
-        _, result = self.move([ref])
-        self.assertEqual("uncertain", result["status"])
-        self.assertEqual("MOVE_COMMAND_NOT_CONFIRMED", result["command_error_code"])
+        preview, result = self.move([ref])
+        self.assertEqual(("uncertain", "MOVE_NOT_APPLIED", "MOVE_COMMAND_NOT_CONFIRMED"),
+                         (result["status"], result["error_code"], result["command_error_code"]))
+        self.assertEqual("uncertain", self.service.move_apply(preview["preview_id"], preview["preview_hash"])["status"])
         self.assertEqual(1, len(self.server.writes))
+        self.server.refuse = None
+        self.assertEqual("verified", self.move([ref], "archive")[1]["status"])
+
+    def test_copy_without_copyuid_never_deletes_source(self):
+        self.make(capabilities=("IMAP4rev1", "UIDPLUS"))
+        self.server.no_copyuid = True
+        ref = self.server.add("INBOX", "no copyuid", "<nc@example.test>")
+        _, result = self.move([ref])
+        self.assertEqual(["COPY"], [w[0] for w in self.server.writes])
+        self.assertEqual(("uncertain", "MOVE_SOURCE_STILL_PRESENT", "MOVE_COPY_NOT_CONFIRMED"),
+                         (result["status"], result["error_code"], result["command_error_code"]))
+        self.assertIn(ref["uid"], self.server.messages["INBOX"])
+
+    def test_uidvalidity_change_after_attempt_is_conflict_not_verified(self):
+        self.server.fail_on = "MOVE"
+        self.server.ignore = "MOVE"
+        ref = self.server.add("INBOX", "renumbered", "<uv@example.test>")
+        preview, _ = self.move([ref])
+        self.server.validity["INBOX"] = "77"
+        result = self.service.move_status(preview["preview_id"])
+        self.assertEqual(("conflict", "UIDVALIDITY_CHANGED"), (result["status"], result["error_code"]))
+
+    def test_delete_absent_without_attempted_expunge_is_not_verified(self):
+        self.server.fail_on = "STORE"
+        ref = self.server.add("Trash", "t", "<ne@example.test>")
+        preview = self.service.delete_preview("one", [ref])
+        def vanish(*_):
+            del self.server.messages["Trash"][ref["uid"]]  # restored elsewhere by another client
+            raise TimeoutError("lost acknowledgement")
+        original = FakeReader._write
+        FakeReader._write = lambda reader, command, args: vanish() if command == "STORE" else original(reader, command, args)
+        self.addCleanup(setattr, FakeReader, "_write", original)
+        result = self.service.delete_apply(preview["preview_id"], preview["preview_hash"])
+        self.assertEqual(("uncertain", "DELETE_NOT_CONFIRMED"), (result["status"], result["error_code"]))
 
     def test_changed_source_before_apply_has_no_write(self):
         ref = self.server.add("INBOX", "changing", "<c@example.test>")

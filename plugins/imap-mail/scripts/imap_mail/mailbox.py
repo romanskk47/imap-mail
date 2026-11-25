@@ -43,6 +43,8 @@ def _capabilities(reader):
 
 
 def _uid_rows(status, rows):
+    if status == "OK" and rows == [None]:
+        return []  # imaplib's result when the server sends no "* SEARCH" line.
     if status != "OK" or not isinstance(rows, list) or len(rows) != 1 or not isinstance(rows[0], bytes):
         raise DraftError("MAILBOX_SEARCH_FAILED")
     values = rows[0].split()
@@ -51,22 +53,22 @@ def _uid_rows(status, rows):
     return [v.decode("ascii") for v in values]
 
 
-def _copyuid(client, data, uid):
-    """Parse one COPYUID mapping (RFC 4315) for exactly this source UID."""
-    available = []
+def _copyuid(client, uid):
+    """Parse one COPYUID mapping (RFC 4315) for exactly this source UID.
+
+    imaplib stores bracketed response codes, tagged or untagged, where
+    ``response("COPYUID")`` returns them; the command data itself is [None].
+    """
     try:
         _, values = client.response("COPYUID")
         available = [v for v in (values or []) if isinstance(v, bytes) and v]
     except Exception:
         available = []
     if not available:
-        available = [m[1] for row in (data or []) if isinstance(row, bytes)
-                     for m in [re.search(rb"\[COPYUID ([^]]+)\]", row)] if m]
-    if not available:
         return None
     if len(available) != 1:
         raise DraftError("COPYUID_INVALID")
-    match = re.fullmatch(rb"([1-9][0-9]*) ([1-9][0-9]*) ([1-9][0-9]*)", available[0].split(b"]", 1)[0].strip())
+    match = re.fullmatch(rb"([1-9][0-9]*) ([1-9][0-9]*) ([1-9][0-9]*)", available[0].strip())
     if not match or match[2].decode() != uid:
         raise DraftError("COPYUID_INVALID")
     return {"uidvalidity": match[1].decode(), "uid": match[3].decode()}
@@ -80,6 +82,13 @@ def _message_id(raw):
     except Exception:
         return None
     return value if MESSAGE_ID.fullmatch(value) else None
+
+
+def _not_applied(observations):
+    """Readback proved nothing changed: every source present, unchanged, no copy."""
+    return bool(observations) and all(
+        row.get("source") == "present" and row.get("source_unchanged") is True and not row.get("destination_uids")
+        for row in observations)
 
 
 def _same_content(raw, expected_sha256, expected_semantic):
@@ -177,6 +186,7 @@ class MailboxService(FlagService):
                 continue
             record = json.loads(private_read(path, 1024 * 1024))
             if (record.get("attempted") and record.get("state") != "verified" and
+                    not (record.get("state") == "uncertain" and _not_applied(record.get("observations"))) and
                     keys.intersection(_key(m) for m in record.get("immutable", {}).get("messages", []))):
                 raise DraftError("MAILBOX_SOURCE_OPERATION_UNRESOLVED")
 
@@ -283,7 +293,10 @@ class MailboxService(FlagService):
             raise DraftError(error)
 
     def _source_state(self, reader, source):
-        reader.select(source["mailbox"])
+        validity, _ = reader.select(source["mailbox"])
+        if str(validity) != source["uidvalidity"]:
+            # An old UID is meaningless after a UIDVALIDITY change.
+            raise DraftError("UIDVALIDITY_CHANGED")
         status, rows = reader.client.uid("SEARCH", None, "UID", source["uid"])
         uids = _uid_rows(status, rows)
         if source["uid"] not in uids:
@@ -345,7 +358,7 @@ class MailboxService(FlagService):
         try:
             with self._reader(profile) as reader:
                 for source in immutable["messages"]:
-                    state, _ = self._source_state(reader, source)
+                    state, current = self._source_state(reader, source)
                     validity, _ = reader.select(target["mailbox"])
                     if str(validity) != target["uidvalidity"]:
                         raise DraftError("MOVE_DESTINATION_CHANGED")
@@ -365,6 +378,7 @@ class MailboxService(FlagService):
                         if _same_content(raw, source["content_sha256"], source.get("semantic_sha256")):
                             found.append(uid)
                     observations.append({**{k: source[k] for k in _REFERENCE}, "source": state,
+                                         "source_unchanged": current == source["content_sha256"],
                                          "destination_uids": found})
             complete = all(row["source"] == "absent" and len(row["destination_uids"]) == 1 for row in observations)
             if complete:
@@ -383,6 +397,8 @@ class MailboxService(FlagService):
                     record["error_code"] = "MOVE_DESTINATION_NOT_CONFIRMED"
                 elif any(len(row["destination_uids"]) > 1 for row in observations):
                     record["error_code"] = "MOVE_DESTINATION_NOT_UNIQUE"
+                elif _not_applied(observations):
+                    record["error_code"] = "MOVE_NOT_APPLIED"
                 else:
                     record["error_code"] = "MOVE_NOT_CONFIRMED"
         except Exception as exc:
@@ -450,12 +466,15 @@ class MailboxService(FlagService):
                                 raise DraftError("MOVE_COMMAND_NOT_CONFIRMED")
                             if step in ("MOVE", "COPY"):
                                 try:
-                                    mapping = _copyuid(writer.client, data, source["uid"])
+                                    mapping = _copyuid(writer.client, source["uid"])
                                 except DraftError:
                                     mapping = None
                                 if mapping:
                                     record["mappings"][source["uid"]] = mapping
                                     write_json(path, record)
+                                if step == "COPY" and (not mapping or mapping["uidvalidity"] != target["uidvalidity"]):
+                                    # Never flag/expunge the source without a confirmed copy.
+                                    raise DraftError("MOVE_COPY_NOT_CONFIRMED")
             except Exception as exc:
                 code = exc.code if isinstance(exc, DraftError) else "MOVE_RESPONSE_UNCERTAIN"
                 if not record.get("attempted"):
@@ -535,8 +554,10 @@ class MailboxService(FlagService):
                     state, current = self._source_state(reader, source)
                     if state != "absent" and current != source["content_sha256"]:
                         raise DraftError("DELETE_SOURCE_CHANGED")
-                    observations.append({**{k: source[k] for k in _REFERENCE}, "source": state})
-            if all(row["source"] == "absent" for row in observations):
+                    observations.append({**{k: source[k] for k in _REFERENCE}, "source": state,
+                                         "source_unchanged": state != "absent", "destination_uids": []})
+            expunged = {a["uid"] for a in record.get("attempts", []) if a.get("command") == "EXPUNGE"}
+            if all(row["source"] == "absent" and row["uid"] in expunged for row in observations):
                 record.update(state="verified", receipt={"deleted": [{k: row[k] for k in _REFERENCE} for row in observations],
                                                          "verified_at": _now(), "backup": immutable["backup"]})
                 record.pop("error_code", None)
@@ -544,6 +565,7 @@ class MailboxService(FlagService):
                 record["state"] = "uncertain"
                 record["error_code"] = ("DELETE_EXPUNGE_NOT_CONFIRMED"
                                         if any(row["source"] == "deleted_flag" for row in observations)
+                                        else "DELETE_NOT_APPLIED" if _not_applied(observations)
                                         else "DELETE_NOT_CONFIRMED")
         except Exception as exc:
             code = exc.code if isinstance(exc, DraftError) else "DELETE_READBACK_FAILED"
